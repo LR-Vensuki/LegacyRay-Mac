@@ -579,7 +579,7 @@ static const char *kick_state(char *out, size_t cap) {
         snprintf(out, cap, "installed, not executable");
         return out;
     }
-    if (stat("/var/log/legacyray-kick.log", &log) == 0) {
+    if (stat(SENKO_KICK_LOG, &log) == 0) {
         long age = (long)(time(NULL) - log.st_mtime);
         if (age < 0) age = 0;
         snprintf(out, cap, "ready, last ran %ld s ago", age);
@@ -638,7 +638,29 @@ int daemon_ctl_diag(void *ctx, char *buf, size_t cap, size_t *len) {
     diag_add(buf, cap, &off, "daemon.pid", "%ld", (long)getpid());
     diag_add(buf, cap, &off, "daemon.uptime", "%ld s",
              (long)(ctl_engine_now() - d->started_at));
-#if defined(SENKO_ROOTLESS)
+#if defined(LR_MACOS)
+    {
+        char osx[64] = "unknown";
+        FILE *vf = fopen("/System/Library/CoreServices/SystemVersion.plist", "r");
+        if (vf) {
+            char body[4096];
+            size_t n = fread(body, 1, sizeof body - 1, vf);
+            fclose(vf);
+            body[n] = '\0';
+            const char *k = strstr(body, "<key>ProductVersion</key>");
+            const char *v = k ? strstr(k, "<string>") : NULL;
+            if (v) {
+                v += 8;
+                size_t len = strcspn(v, "<");
+                if (len > 0 && len < sizeof osx) {
+                    memcpy(osx, v, len);
+                    osx[len] = '\0';
+                }
+            }
+        }
+        diag_add(buf, cap, &off, "daemon.platform", "OS X %s", osx);
+    }
+#elif defined(SENKO_ROOTLESS)
     diag_add(buf, cap, &off, "daemon.jailbreak", "rootless, root at %s", SENKO_JBROOT);
 #else
     diag_add(buf, cap, &off, "daemon.jailbreak", "rootful, root at /");
@@ -738,7 +760,7 @@ int daemon_ctl_diag(void *ctx, char *buf, size_t cap, size_t *len) {
     diag_add(buf, cap, &off, "path.substrate", "%s", SENKO_SUBSTRATE_DIR);
 
     diag_add(buf, cap, &off, "proc.legacyrayawgd", "%s",
-             proc_state("/var/run/legacyrayawgd.pid", scratch, sizeof scratch));
+             proc_state(SENKO_AWG_PID, scratch, sizeof scratch));
     diag_add(buf, cap, &off, "proc.senko_kick", "%s",
              kick_state(scratch, sizeof scratch));
     diag_add(buf, cap, &off, "substrate.tlsfix", "%s",
@@ -797,8 +819,6 @@ void daemon_ctl_persist(void *ctx, const store_t *store) {
     storefile_save(store, &d->settings, d->config_path);
 }
 
-#define SENKO_BACKUP_EXPORT "/var/mobile/Documents/legacyray-backup.lray"
-#define SENKO_BACKUP_IMPORT "/var/mobile/Library/Preferences/LegacyRay/import.lray"
 
 int daemon_ctl_backup(void *ctx, int restore, store_t *store) {
     daemon_ctl_t *d = (daemon_ctl_t *)ctx;
@@ -806,7 +826,13 @@ int daemon_ctl_backup(void *ctx, int restore, store_t *store) {
     if (!restore) {
         if (storefile_save(store, &d->settings, SENKO_BACKUP_EXPORT) != STOREFILE_OK)
             return -1;
+        #if defined(__APPLE__) && !defined(SENKO_HOST_TEST)
+        /* the export is the app's to read and move */
+        (void)chown(SENKO_BACKUP_EXPORT, senko_client_uid(),
+                    senko_client_gid() ? senko_client_gid() : (gid_t)-1);
+#else
         (void)chown(SENKO_BACKUP_EXPORT, 501, 501);
+#endif
         return 0;
     }
     struct stat staged;

@@ -8,4 +8,9 @@
    the latest release of this repository and offers its .deb, which installs
    as root. it has to be an account the project owns: a name nobody holds can
    be registered by anyone, and their release would reach every phone */
+#if defined(LR_MACOS)
+/* the mac build ships from its own repository: LegacyRay-<version>-mac.zip */
+#define LR_GITHUB_REPO "LR-Vensuki/LegacyRay-Mac"
+#else
 #define LR_GITHUB_REPO "LR-Vensuki/LegacyRay"
+#endif

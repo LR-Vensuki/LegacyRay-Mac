@@ -10,7 +10,34 @@
 #include <openssl/err.h>
 #include "../../common/senko_paths.h"
 
-#define SENKO_CA_BUNDLE SENKO_USR_LIB "/legacyraytlsfix/cacert.pem"
+#if defined(LR_MACOS)
+#include <limits.h>
+#include <mach-o/dyld.h>
+#endif
+
+#if defined(LR_MACOS)
+/* the installed roots, else the copy beside the running binary (the app's
+   Helpers folder while the daemon runs from the bundle) */
+static void load_ca_bundle(SSL_CTX *ctx) {
+    if (access(SENKO_CA_BUNDLE, R_OK) == 0) {
+        SSL_CTX_load_verify_locations(ctx, SENKO_CA_BUNDLE, NULL);
+        return;
+    }
+    char self[PATH_MAX], real[PATH_MAX], path[PATH_MAX];
+    uint32_t n = sizeof self;
+    if (_NSGetExecutablePath(self, &n) != 0 || !realpath(self, real)) return;
+    char *slash = strrchr(real, '/');
+    if (!slash) return;
+    *slash = '\0';
+    if (snprintf(path, sizeof path, "%s/cacert.pem", real) >= (int)sizeof path) return;
+    if (access(path, R_OK) == 0) SSL_CTX_load_verify_locations(ctx, path, NULL);
+}
+#else
+static void load_ca_bundle(SSL_CTX *ctx) {
+    if (access(SENKO_CA_BUNDLE, R_OK) == 0)
+        SSL_CTX_load_verify_locations(ctx, SENKO_CA_BUNDLE, NULL);
+}
+#endif
 
 typedef struct {
     SSL_CTX *ctx;
@@ -115,8 +142,7 @@ static void *tls_open(int fd, const transport_tls_cfg_t *cfg) {
     } else {
         SSL_CTX_set_verify(h->ctx, SSL_VERIFY_PEER, NULL);
         SSL_CTX_set_default_verify_paths(h->ctx);
-        if (access(SENKO_CA_BUNDLE, R_OK) == 0)
-            SSL_CTX_load_verify_locations(h->ctx, SENKO_CA_BUNDLE, NULL);
+        load_ca_bundle(h->ctx);
     }
 
     h->ssl = SSL_new(h->ctx);

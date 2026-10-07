@@ -57,6 +57,7 @@ int senko_ios_major_from_darwin(const char *release) {
     return darwin >= 15 ? darwin - 6 : 0;
 }
 
+#if !defined(LR_MACOS)
 static int ios_major_detect(const char **source) {
     if (source) *source = "unknown";
     FILE *f = fopen("/System/Library/CoreServices/SystemVersion.plist", "r");
@@ -89,6 +90,19 @@ static int ios_major_detect(const char **source) {
     return 0;
 }
 
+#endif
+
+#if defined(LR_MACOS)
+/* os x shares the plist path and the darwin numbering with ios, and either
+   would read as some ios major and switch on branches meant for phones */
+int senko_ios_major(void) {
+    return 0;
+}
+
+const char *senko_ios_major_source(void) {
+    return "os x";
+}
+#else
 int senko_ios_major(void) {
     return ios_major_detect(NULL);
 }
@@ -98,3 +112,4 @@ const char *senko_ios_major_source(void) {
     (void)ios_major_detect(&source);
     return source;
 }
+#endif

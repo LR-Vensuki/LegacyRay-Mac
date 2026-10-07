@@ -36,6 +36,12 @@ extern char **environ;
 #define PF_ANCHOR "com.apple/legacyray"
 #define PF_CONF_CAP (512u * 1024u)
 
+/* the rootless jailbreak and os x both keep the main ruleset as the system
+   loaded it and put every legacyray rule into one anchor under com.apple */
+#if defined(SENKO_ROOTLESS) || defined(LR_MACOS)
+#define SENKO_PF_ANCHORED 1
+#endif
+
 /* the answer cache and the bypass shadow run to megabytes. they live on the
    heap from the first tunnel on: calloc hands back untouched zero pages, where
    a static that is memset on every connect stays dirty for the daemon's whole
@@ -227,6 +233,108 @@ void routing_scopedroute_restore(const char *prev) {
     (void)routing_spawn(sysctl, argv);
 }
 
+#if defined(LR_MACOS)
+/* os x shares pf with the system: the application firewall, internet sharing
+   and airdrop keep their rules under the com.apple anchor of /etc/pf.conf and
+   enable pf by reference (-E hands out a token, -X gives it back). legacyray
+   does the same, so taking the tunnel down never disables pf under somebody
+   else, and the main ruleset is only ever the stock one */
+static char g_pf_token[32];
+/* net.inet.ip.forwarding as it was before the first tunnel, put back after */
+static char g_forwarding_prev[8];
+
+/* stdout and stderr of a tool into buf; pfctl says most things on stderr */
+static int capture_all(const char *bin, char *const argv[], char *buf, size_t cap) {
+    if (!buf || cap < 2) return -1;
+    buf[0] = '\0';
+    int fds[2];
+    if (pipe(fds) != 0) return -1;
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, fds[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&fa, fds[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&fa, fds[0]);
+    posix_spawn_file_actions_addclose(&fa, fds[1]);
+    pid_t pid = 0;
+    int rc = posix_spawn(&pid, bin, &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    close(fds[1]);
+    if (rc != 0) {
+        close(fds[0]);
+        return -1;
+    }
+    size_t used = 0;
+    for (;;) {
+        ssize_t n = read(fds[0], buf + used, cap - 1 - used);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        used += (size_t)n;
+        if (used + 1 >= cap) break;
+    }
+    buf[used] = '\0';
+    close(fds[0]);
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+/* the anchor only takes effect while the main ruleset walks the com.apple
+   anchors. the system loads /etc/pf.conf at boot, but a hand-flushed pf has
+   no anchors left */
+static void mac_pf_main_ruleset(const char *pfctl) {
+    char out[4096];
+    char *show[] = { (char *)pfctl, (char *)"-s", (char *)"Anchors", NULL };
+    if (capture_all(pfctl, show, out, sizeof out) == 0 && strstr(out, "com.apple"))
+        return;
+    fprintf(stderr, "legacyrayd: pf main ruleset has no com.apple anchor, loading /etc/pf.conf\n");
+    char *load[] = { (char *)pfctl, (char *)"-q", (char *)"-f", (char *)"/etc/pf.conf", NULL };
+    (void)routing_spawn(pfctl, load);
+}
+
+static void mac_pf_enable(const char *pfctl) {
+    if (g_pf_token[0]) return;
+    char out[1024];
+    char *argv[] = { (char *)pfctl, (char *)"-E", NULL };
+    (void)capture_all(pfctl, argv, out, sizeof out);
+    /* "Token : 14781826839416377639" */
+    const char *t = strstr(out, "Token");
+    if (t) t = strchr(t, ':');
+    if (t) {
+        ++t;
+        while (*t == ' ') ++t;
+        size_t n = strspn(t, "0123456789");
+        if (n > 0 && n < sizeof g_pf_token) {
+            memcpy(g_pf_token, t, n);
+            g_pf_token[n] = '\0';
+        }
+    }
+    if (!g_pf_token[0])
+        fprintf(stderr, "legacyrayd: pfctl -E gave no token; pf stays enabled after the tunnel\n");
+}
+
+static void mac_pf_release(void) {
+    if (!g_pf_token[0]) return;
+    const char *pfctl = routing_find_pfctl();
+    if (pfctl) {
+        char *argv[] = { (char *)pfctl, (char *)"-q", (char *)"-X", g_pf_token, NULL };
+        (void)routing_spawn(pfctl, argv);
+    }
+    g_pf_token[0] = '\0';
+}
+
+static void mac_forwarding_restore(void) {
+    if (!g_forwarding_prev[0]) return;
+    const char *sysctl = find_sysctl();
+    if (sysctl && strcmp(g_forwarding_prev, "1") != 0) {
+        char val[64];
+        snprintf(val, sizeof val, "net.inet.ip.forwarding=%s", g_forwarding_prev);
+        char *argv[] = { (char *)sysctl, (char *)"-w", val, NULL };
+        (void)routing_spawn(sysctl, argv);
+    }
+    g_forwarding_prev[0] = '\0';
+}
+#endif
+
 static int run_spawn_quiet(const char *bin, char *const argv[]) {
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
@@ -370,7 +478,7 @@ static int pf_table_batch(const routing_exec_t *st, const char *operation,
         goto done;
     }
     pid_t pid = 0;
-#if defined(SENKO_ROOTLESS)
+#if defined(SENKO_PF_ANCHORED)
     char *argv[] = { (char *)pfctl, (char *)"-q", (char *)"-a",
                      (char *)PF_ANCHOR, (char *)"-t", (char *)"legacyray_bypass",
                      (char *)"-T", (char *)operation, (char *)"-f", (char *)"-", NULL };
@@ -408,7 +516,7 @@ static void pf_geo_tables(const routing_exec_t *st) {
             continue;
         }
         const char *table = r->action == RULE_ACTION_BLOCK ? "legacyray_block" : "legacyray_bypass";
-#if defined(SENKO_ROOTLESS)
+#if defined(SENKO_PF_ANCHORED)
         char *argv[] = { (char *)pfctl, (char *)"-q", (char *)"-a", (char *)PF_ANCHOR,
                          (char *)"-t", (char *)table, (char *)"-T", (char *)"add",
                          (char *)"-f", path, NULL };
@@ -655,7 +763,7 @@ static int apply_ipfw(const char *ipfw, const char *server_ip,
 static void clear_pf(void) {
     const char *pfctl = routing_find_pfctl();
     if (!pfctl) return;
-#if defined(SENKO_ROOTLESS)
+#if defined(SENKO_PF_ANCHORED)
     char *argv[] = { (char *)pfctl, (char *)"-q", (char *)"-a",
                      (char *)PF_ANCHOR, (char *)"-F", (char *)"all", NULL };
 #else
@@ -674,6 +782,12 @@ static int apply_pf_mode(const char *pfctl, const char *server_ips,
     ensure_pf_os_file();
     const char *sysctl = find_sysctl();
     if (sysctl) {
+#if defined(LR_MACOS)
+        if (!g_forwarding_prev[0] &&
+            sysctl_read(sysctl, "net.inet.ip.forwarding", g_forwarding_prev,
+                        sizeof g_forwarding_prev) != 0)
+            g_forwarding_prev[0] = '\0';
+#endif
         char *argv[] = { (char *)sysctl, (char *)"-w",
                            (char *)"net.inet.ip.forwarding=1", NULL };
         routing_spawn(sysctl, argv);
@@ -682,7 +796,7 @@ static int apply_pf_mode(const char *pfctl, const char *server_ips,
     char *conf = (char *)malloc(PF_CONF_CAP);
     size_t clen = 0;
     if (!conf) return -1;
-#if defined(SENKO_ROOTLESS)
+#if defined(SENKO_PF_ANCHORED)
     routing_status_t conf_rc = routing_pf_anchor_conf_rules(
         server_ips, rules, ifnames, if_count, redir_port, dns_local_port,
         mode, conf, PF_CONF_CAP, &clen);
@@ -701,13 +815,18 @@ static int apply_pf_mode(const char *pfctl, const char *server_ips,
     }
     free(conf);
 
+#if defined(LR_MACOS)
+    mac_pf_main_ruleset(pfctl);
+    mac_pf_enable(pfctl);
+#else
     char *enargv[] = { (char *)pfctl, (char *)"-q", (char *)"-e", NULL };
     int enable_rc = run_spawn_quiet(pfctl, enargv);
     if (enable_rc != 0) {
         char *compat_enargv[] = { (char *)pfctl, (char *)"-q", (char *)"-E", NULL };
         run_spawn_quiet(pfctl, compat_enargv);
     }
-#if defined(SENKO_ROOTLESS)
+#endif
+#if defined(SENKO_PF_ANCHORED)
     char *lfargv[] = { (char *)pfctl, (char *)"-q", (char *)"-a",
                        (char *)PF_ANCHOR, (char *)"-f", (char *)PF_CONF, NULL };
 #else
@@ -1237,6 +1356,10 @@ void routing_exec_down(routing_exec_t *st) {
     if (st->mode == ROUTING_MODE_IPFW) clear_ipfw();
     if (st->mode == ROUTING_MODE_PF)   clear_pf();
     if (st->mode == ROUTING_MODE_PF) unlink(PF_CONF);
+#if defined(LR_MACOS)
+    mac_pf_release();
+    mac_forwarding_restore();
+#endif
     memset(st, 0, sizeof *st);
 }
 

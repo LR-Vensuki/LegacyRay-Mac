@@ -62,10 +62,23 @@ NSComparisonResult LRCompareVersions(NSString *a, NSString *b) {
         cJSON *asset = NULL;
         cJSON_ArrayForEach(asset, assets) {
             cJSON *u = cJSON_GetObjectItemCaseSensitive(asset, "browser_download_url");
-            if (cJSON_IsString(u) && [[NSString stringWithUTF8String:u->valuestring] hasSuffix:@".deb"]) {
-                r.debURL = [NSString stringWithUTF8String:u->valuestring];
+            if (!cJSON_IsString(u)) continue;
+            NSString *link = [NSString stringWithUTF8String:u->valuestring];
+#if defined(LR_MACOS)
+            /* the mac build ships as LegacyRay-<version>-mac.zip */
+            NSString *file = [[link lastPathComponent] lowercaseString];
+            if (([file hasSuffix:@".zip"] || [file hasSuffix:@".dmg"]) &&
+                ([file rangeOfString:@"mac"].location != NSNotFound ||
+                 [file rangeOfString:@"osx"].location != NSNotFound)) {
+                r.debURL = link;
                 break;
             }
+#else
+            if ([link hasSuffix:@".deb"]) {
+                r.debURL = link;
+                break;
+            }
+#endif
         }
         cJSON_Delete(root);
         LRLog(@"update", @"latest release %@", r.version);
@@ -85,10 +98,15 @@ NSComparisonResult LRCompareVersions(NSString *a, NSString *b) {
 
 + (void)openURLString:(NSString *)s {
     NSURL *u = [NSURL URLWithString:s];
+#if defined(LR_MACOS)
+    if (u) [[NSWorkspace sharedWorkspace] openURL:u];
+#else
     if (u) [[UIApplication sharedApplication] openURL:u];
+#endif
 }
 
 + (void)openRelease:(LRRelease *)release {
+#if !defined(LR_MACOS)
     if ([LRPrefs preferGitHubLegacy]) {
         NSURL *legacy = [NSURL URLWithString:[NSString stringWithFormat:@"githublegacy://release/%s/latest",
                                                LR_GITHUB_REPO]];
@@ -97,11 +115,13 @@ NSComparisonResult LRCompareVersions(NSString *a, NSString *b) {
             return;
         }
     }
+#endif
     [self openURLString:release.pageURL ? release.pageURL
         : [NSString stringWithFormat:@"https://github.com/%s/releases/latest", LR_GITHUB_REPO]];
 }
 
 + (void)openProjectPage {
+#if !defined(LR_MACOS)
     if ([LRPrefs preferGitHubLegacy]) {
         NSURL *legacy = [NSURL URLWithString:[NSString stringWithFormat:@"githublegacy://repo/%s", LR_GITHUB_REPO]];
         if ([[UIApplication sharedApplication] canOpenURL:legacy]) {
@@ -109,6 +129,7 @@ NSComparisonResult LRCompareVersions(NSString *a, NSString *b) {
             return;
         }
     }
+#endif
     [self openURLString:[NSString stringWithFormat:@"https://github.com/%s", LR_GITHUB_REPO]];
 }
 @end

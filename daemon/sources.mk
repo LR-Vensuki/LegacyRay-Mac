@@ -1,0 +1,22 @@
+# the source lists of legacyrayd and the amneziawg helper, shared by the ios
+# (Makefile.ios) and os x (Makefile.mac) builds
+CORE_SRC = core/vless.c core/b64.c core/config.c core/rules.c core/dns_msg.c \
+           core/dns_cache.c core/profiles.c core/happ.c core/happ_crypt5.c \
+           core/third_party/cJSON.c core/net_safe.c core/socks5.c core/senko_trace.c \
+           core/senko_replay.c core/senko_upload.c core/vless_conn.c core/session.c \
+           core/store.c core/control.c core/ctl_engine.c core/http.c core/url.c \
+           core/subfetch.c core/transport_tcp.c core/transport_tls.c core/frag.c core/geo.c core/transport_ws.c \
+           core/transport_xhttp.c core/transport_pick.c core/grpc_core.c core/h2_core.c \
+           core/hpack.c core/reality_crypto.c core/reality_auth.c core/tls_clienthello.c \
+           core/tls13_kdf.c core/tls13_keysched.c core/tls13_record.c \
+           core/tls13_transcript.c core/tls13_handshake.c core/reality_handshake.c \
+           core/socks5_client.c core/http_client.c core/vision.c core/awg_config.c \
+           core/awg_handshake.c core/trojan_client.c core/shadowsocks_client.c \
+           core/blake2b256.c
+DAEMON_SRC = dialer.c loop.c core/sniff.c pf_natlook.c ctl_server.c daemon_ctl.c storefile.c netwatch.c geo_ctl.c \
+             settings.c status.c routing.c routing_exec.c routing_fwd.c pf_table.c \
+             c_backend.c go_config.c go_backend.c awg_utun.c awg_route.c awg_pfroute.c \
+             legacy_ios.c proc_detach.c main.c
+AWGD_SRC   = senkoawgd.c awg_utun.c awg_route.c awg_pfroute.c core/awg_config.c \
+             core/awg_handshake.c core/awg_tunnel.c core/b64.c core/reality_crypto.c \
+             status.c legacy_ios.c proc_detach.c

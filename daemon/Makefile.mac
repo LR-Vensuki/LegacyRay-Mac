@@ -1,0 +1,61 @@
+# legacyrayd and its helpers for os x 10.8 and later, x86_64, against static
+# openssl (scripts/build_deps_mac.sh) and the 10.8 sdk from xcode 4.6.3.
+# the same sources as the ios build; LR_MACOS picks the os x paths
+# (common/senko_paths.h), the pf anchor and the pf token.
+include ../make/config.mk
+
+LR_MAC_SDK ?= $(THEOS)/sdks/MacOSX10.8.sdk
+LR_MAC_MIN ?= 10.8
+LR_MAC_OSSL ?= $(LR_DEPS)/openssl-mac
+LR_MAC_SSH2 ?= $(LR_DEPS)/libssh2-mac
+
+ifeq ($(wildcard $(LR_MAC_OSSL)/lib/libcrypto.a),)
+$(error no os x openssl at $(LR_MAC_OSSL): run scripts/build_deps_mac.sh first)
+endif
+
+MAC_CC  := $(LR_TC)/clang -target x86_64-apple-macosx$(LR_MAC_MIN) -B $(LR_TC)
+MAC_ARCH := -arch x86_64 -mmacosx-version-min=$(LR_MAC_MIN) -isysroot $(LR_MAC_SDK)
+
+BUILD   ?= build/mac
+CFLAGS  := -std=c99 -Wall -Wextra -Wno-unused-parameter -O2 -DSENKO_RELEASE -DLR_MACOS=1 \
+           $(MAC_ARCH) -Icore -Icore/third_party -I. -I$(LR_MAC_OSSL)/include
+LIBS    := $(LR_MAC_OSSL)/lib/libssl.a $(LR_MAC_OSSL)/lib/libcrypto.a -lz
+LDFLAGS := $(MAC_ARCH) -Wl,-dead_strip
+
+include sources.mk
+
+TOOLS = $(BUILD)/legacyrayd $(BUILD)/legacyrayctl $(BUILD)/legacyray-kick $(BUILD)/legacyrayawgd \
+        $(BUILD)/legacyray-ssh
+
+.PHONY: all clean
+all: $(TOOLS)
+
+$(BUILD)/legacyrayd: $(CORE_SRC) $(DAEMON_SRC) ../common/senko_paths.h
+	@mkdir -p $(BUILD)
+	$(MAC_CC) $(CFLAGS) $(CORE_SRC) $(DAEMON_SRC) -o $@ $(LDFLAGS) $(LIBS)
+	$(LR_STRIP) -x $@
+
+$(BUILD)/legacyrayctl: senkoctl.c core/b64.c ../common/senko_paths.h
+	@mkdir -p $(BUILD)
+	$(MAC_CC) $(CFLAGS) senkoctl.c core/b64.c -o $@ $(LDFLAGS)
+	$(LR_STRIP) -x $@
+
+$(BUILD)/legacyrayawgd: $(AWGD_SRC) ../common/senko_paths.h
+	@mkdir -p $(BUILD)
+	$(MAC_CC) $(CFLAGS) $(AWGD_SRC) -o $@ $(LDFLAGS) $(LIBS)
+	$(LR_STRIP) -x $@
+
+$(BUILD)/legacyray-ssh: lr_ssh.c core/b64.c ../common/senko_paths.h
+	@mkdir -p $(BUILD)
+	$(MAC_CC) $(CFLAGS) -I$(LR_MAC_SSH2)/include lr_ssh.c core/b64.c -o $@ $(LDFLAGS) \
+	    $(LR_MAC_SSH2)/lib/libssh2.a $(LR_MAC_OSSL)/lib/libcrypto.a
+	$(LR_STRIP) -x $@
+
+# setuid root once the installer has put it in /usr/local/legacyray/bin
+$(BUILD)/legacyray-kick: senko_kick.c ../common/senko_paths.h
+	@mkdir -p $(BUILD)
+	$(MAC_CC) $(CFLAGS) senko_kick.c -o $@ $(LDFLAGS)
+	$(LR_STRIP) -x $@
+
+clean:
+	rm -rf build/mac

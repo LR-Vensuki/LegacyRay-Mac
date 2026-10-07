@@ -1,4 +1,5 @@
 #import "LRPrefs.h"
+#include "senko_paths.h"
 #import "LRAWGProfiles.h"
 
 NSString * const LRPrefsDidChangeNotification = @"LRPrefsDidChangeNotification";
@@ -26,7 +27,12 @@ static BOOL LRBool(NSString *key, BOOL fallback) {
 
 + (BOOL)systemIsFlat {
     static int cached = -1;
+#if defined(LR_MACOS)
+    /* os x went flat with yosemite */
+    if (cached < 0) cached = LRMacSystemAtLeast(10, 10) ? 1 : 0;
+#else
     if (cached < 0) cached = LR_SYSTEM_AT_LEAST(@"7.0") ? 1 : 0;
+#endif
     return cached == 1;
 }
 
@@ -117,8 +123,8 @@ static BOOL LRBool(NSString *key, BOOL fallback) {
     return [LRAWGProfiles hasProfiles];
 }
 
-#define LR_POWER_CONF @"/var/mobile/Library/Preferences/LegacyRay/power.conf"
-#define LR_TLS_VERBOSE @"/var/mobile/Library/Preferences/LegacyRay/tlsfix-verbose"
+#define LR_POWER_CONF @SENKO_POWER_CONF
+#define LR_TLS_VERBOSE @SENKO_DATA_DIR "/tlsfix-verbose"
 
 + (LRAWGKeepaliveMode)awgKeepalive {
     NSInteger v = [D() integerForKey:@"LRAWGKeepalive"];

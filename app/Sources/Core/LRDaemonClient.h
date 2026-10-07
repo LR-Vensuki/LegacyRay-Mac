@@ -3,9 +3,10 @@
    means the daemon did not answer at all. the protocol is senko's, with the
    legacyray additions (SUBEXTRA, the new settings keys, rule types) */
 #import <Foundation/Foundation.h>
+#include "senko_paths.h"
 #import "LRModels.h"
 
-#define LR_DAEMON_SOCKET @"/var/tmp/legacyrayd.sock"
+#define LR_DAEMON_SOCKET @SENKO_CTL_SOCK
 /* the client adds one of these lines to a CONNECT or DISCONNECT reply that
    stopped before its final state: the daemon closed the socket, or the wait
    ran out */

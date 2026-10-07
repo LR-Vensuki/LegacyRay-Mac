@@ -1,4 +1,5 @@
 #import "LRTunnel.h"
+#include "senko_paths.h"
 #import "LRDaemonClient.h"
 #import "LRCatalog.h"
 #import "LRActivityLog.h"
@@ -19,8 +20,7 @@ NSString * const LRTunnelTickNotification = @"LRTunnelTickNotification";
 /* springboard's vpn badge reads this file; the daemon writes it while it runs
    and the app clears it when a tunnel ends badly */
 static void LRClearStatusBadge(void) {
-    int fd = open("/var/mobile/Library/Preferences/com.legacyray.status.state",
-                  O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(SENKO_STATUS_STATE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         (void)write(fd, "0\n", 2);
         close(fd);
@@ -113,8 +113,8 @@ static NSString *LRConnectErrorText(NSString *err) {
 
 #pragma mark monitoring
 
-#define LR_AWG_PID_PATH     "/var/run/legacyrayawgd.pid"
-#define LR_AWG_STATUS_PATH  @"/var/run/legacyrayawgd.status"
+#define LR_AWG_PID_PATH     SENKO_AWG_PID
+#define LR_AWG_STATUS_PATH  @SENKO_AWG_STATUS
 #define LR_AWG_STATUS_NOTE  "com.legacyray.awg.status"
 #define LR_WATCH_RENEW      20.0
 

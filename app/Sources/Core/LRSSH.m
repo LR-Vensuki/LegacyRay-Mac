@@ -1,4 +1,5 @@
 #import "LRSSH.h"
+#include "senko_paths.h"
 #import "LRActivityLog.h"
 #import <spawn.h>
 #import <sys/wait.h>
@@ -13,8 +14,8 @@ extern char **environ;
 
 NSString * const LRServerHostsDidChangeNotification = @"LRServerHostsDidChangeNotification";
 
-#define LR_SSH_BIN   "/usr/bin/legacyray-ssh"
-#define LR_HOSTS     @"/var/mobile/Library/Preferences/LegacyRay/servers.plist"
+#define LR_SSH_BIN   SENKO_USR_BIN "/legacyray-ssh"
+#define LR_HOSTS     @SENKO_SSH_HOSTS
 
 static NSString *LRB64(NSString *text) {
     NSData *d = [text dataUsingEncoding:NSUTF8StringEncoding];

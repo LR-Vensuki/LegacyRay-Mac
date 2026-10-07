@@ -1,6 +1,7 @@
 #define _DEFAULT_SOURCE
 
 #include "core/config.h"
+#include "../common/senko_paths.h"
 #include "core/transport.h"
 #include "core/transport_pick.h"
 #include "core/vless.h"
@@ -375,7 +376,7 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--managed") == 0) {
         daemon_settings_t settings;
         daemon_settings_defaults(&settings);
-        const char *ctl_path = "/var/tmp/legacyrayd.sock";
+        const char *ctl_path = SENKO_CTL_SOCK;
         const char *config_path = "";
         int full_device = 0;
         parse_managed_args(argc, argv, &ctl_path, &config_path, &settings, &full_device);

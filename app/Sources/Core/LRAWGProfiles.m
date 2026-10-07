@@ -1,10 +1,11 @@
 #import "LRAWGProfiles.h"
+#include "senko_paths.h"
 #import "LRDaemonClient.h"
 #import "LRPrefs.h"
 
 NSString * const LRAWGProfilesDidChangeNotification = @"LRAWGProfilesDidChangeNotification";
 
-#define LR_AWG_BASE    @"/var/mobile/Library/Preferences/LegacyRay"
+#define LR_AWG_BASE    @SENKO_DATA_DIR
 #define LR_AWG_LEGACY  LR_AWG_BASE @"/amneziawg.conf"
 #define LR_AWG_NAMES   @"names.plist"
 #define LR_AWG_ACTIVE  @"LRAWGActive"

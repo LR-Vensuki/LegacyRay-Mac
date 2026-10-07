@@ -1,12 +1,12 @@
 #include "status.h"
+#include "../common/senko_paths.h"
 
 #if defined(__APPLE__)
 #include <fcntl.h>
 #include <notify.h>
 #include <unistd.h>
 
-static const char k_state_path[] =
-    "/var/mobile/Library/Preferences/com.legacyray.status.state";
+static const char k_state_path[] = SENKO_STATUS_STATE;
 static const char k_notify_name[] = "com.legacyray.status.changed";
 #endif
 

@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 
+#include "../common/senko_paths.h"
 #include "storefile.h"
 #include "settings.h"
 
@@ -21,6 +22,9 @@ int storefile_path_ok(const char *path) {
     if (strstr(path, "..") != NULL) return 0;
     if (strncmp(path, "/var/mobile/", 12) != 0 &&
         strncmp(path, "/var/root/", 10) != 0
+#if defined(LR_MACOS)
+        && strncmp(path, SENKO_SYSTEM_DIR "/", sizeof SENKO_SYSTEM_DIR) != 0
+#endif
 #if defined(SENKO_HOST_TEST) || !defined(__APPLE__)
         && strncmp(path, "/tmp/", 5) != 0
 #endif

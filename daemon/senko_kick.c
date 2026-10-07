@@ -25,10 +25,10 @@
 extern char **environ;
 
 #define PLIST  SENKO_LAUNCH_DAEMONS "/com.legacyray.daemon.plist"
-#define SOCK   "/var/tmp/legacyrayd.sock"
+#define SOCK   SENKO_CTL_SOCK
 #define BIN    SENKO_USR_BIN "/legacyrayd"
-#define CFG    "/var/root/Library/Preferences/legacyray.cfg"
-#define KLOG   "/var/log/legacyray-kick.log"
+#define CFG    SENKO_DAEMON_CFG
+#define KLOG   SENKO_KICK_LOG
 /* /var/log is root:wheel 755: unwritable by the mobile process this binary
    still is whenever the very thing it needs to report is that it never
    became root. this path sits in the same directory the app crash report
@@ -37,13 +37,13 @@ extern char **environ;
 #define LABEL  "com.legacyray.daemon"
 #define AWG_BIN SENKO_USR_BIN "/legacyrayawgd"
 #define CTL_BIN SENKO_USR_BIN "/legacyrayctl"
-#define AWG_PID "/var/run/legacyrayawgd.pid"
+#define AWG_PID SENKO_AWG_PID
 #define SYSTEM_LOG SENKO_SYSTEM_LOG
 #define AWG_LOG SYSTEM_LOG
-#define AWG_STATUS "/var/run/legacyrayawgd.status"
+#define AWG_STATUS SENKO_AWG_STATUS
 #define AWG_ACTIVE_CONFIG "/var/run/legacyrayawgd.config"
-#define AWG_CONFIG_DIR "/var/mobile/Library/Preferences/LegacyRay/"
-#define STATUS_STATE "/var/mobile/Library/Preferences/com.legacyray.status.state"
+#define AWG_CONFIG_DIR SENKO_DATA_DIR "/"
+#define STATUS_STATE SENKO_STATUS_STATE
 /* /tmp is readable by the mobile ui */
 #define UPDATE_LOG "/tmp/legacyray-update.log"
 #define UPDATE_MAX_BYTES (64 * 1024 * 1024)
@@ -500,8 +500,19 @@ static int kill_named(const char *name, int signal_number) {
 static int awg_path_ok(const char *path) {
     if (!path || strncmp(path, AWG_CONFIG_DIR, strlen(AWG_CONFIG_DIR)) != 0) return 0;
     size_t n = strlen(path);
-    return n > strlen(AWG_CONFIG_DIR) + 5 && strcmp(path + n - 5, ".conf") == 0 &&
-           strstr(path, "..") == NULL;
+    if (!(n > strlen(AWG_CONFIG_DIR) + 5 && strcmp(path + n - 5, ".conf") == 0 &&
+          strstr(path, "..") == NULL))
+        return 0;
+#if defined(LR_MACOS)
+    /* the folder belongs to the user and the helper reads as root: a link
+       planted there must not lead the read anywhere else */
+    char real[PATH_MAX];
+    if (!realpath(path, real)) return 0;
+    if (strncmp(real, AWG_CONFIG_DIR, strlen(AWG_CONFIG_DIR)) != 0) return 0;
+    struct stat st;
+    if (lstat(path, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
+#endif
+    return 1;
 }
 
 static int awg_read_pid(pid_t *out) {
@@ -997,6 +1008,15 @@ static void klog_setuid_failure(void) {
 
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
+#if defined(LR_MACOS)
+    /* os x has more than one account; only root and the one the helper was
+       installed for may start the daemon or bring a tunnel up */
+    uid_t caller = getuid();
+    if (caller != 0 && caller != senko_client_uid()) {
+        klog("refused: this account did not install LegacyRay");
+        return 1;
+    }
+#endif
     if (geteuid() != 0) {
         if (setuid(0) != 0) {
             klog_setuid_failure();
@@ -1037,6 +1057,16 @@ int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "--awg-validate") == 0)
         return awg_validate(argv[2]) == 0 ? 0 : 1;
     if (argc == 3 && strcmp(argv[1], "--awg-probe") == 0) return awg_probe(argv[2]) == 0 ? 0 : 1;
-    if (argc == 3 && strcmp(argv[1], "--update") == 0) return update_package(argv[2]);
+    if (argc == 3 && strcmp(argv[1], "--update") == 0) {
+#if defined(LR_MACOS)
+        /* the os x app replaces its own bundle and reinstalls the helpers
+           through the authorization dialog; there is no package manager */
+        (void)update_package;
+        fputs("UPDATE ERR not supported on os x\n", stdout);
+        return 1;
+#else
+        return update_package(argv[2]);
+#endif
+    }
     return ensure_legacyrayd();
 }

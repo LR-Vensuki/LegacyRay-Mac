@@ -12,7 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define DEFAULT_SOCK "/var/tmp/legacyrayd.sock"
+#define DEFAULT_SOCK SENKO_CTL_SOCK
 
 /* keep reading streamed catalog and fetch records until a terminal line */
 static int reply_complete(const char *buf, size_t len) {

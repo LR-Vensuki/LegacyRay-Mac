@@ -8,6 +8,7 @@
 #include "awg_utun.h"
 #include "status.h"
 #include "proc_detach.h"
+#include "../common/senko_paths.h"
 
 #include <openssl/crypto.h>
 
@@ -41,10 +42,10 @@ static int g_sig_pipe[2] = { -1, -1 };
 #define AWG_REKEY_ON_RECEIVE_MS   (AWG_REJECT_AFTER_MS - 10000L - 5000L)
 #define AWG_REKEY_RETRY_MS          5000L
 #define AWG_REKEY_ATTEMPT_MS       90000L
-#define AWG_STATUS_PATH "/var/run/legacyrayawgd.status"
+#define AWG_STATUS_PATH SENKO_AWG_STATUS
 #define AWG_STATUS_NOTIFY "com.legacyray.awg.status"
 /* the app owns this file; one line, awg_keepalive=config|screen|off */
-#define AWG_POWER_PATH "/var/mobile/Library/Preferences/LegacyRay/power.conf"
+#define AWG_POWER_PATH SENKO_POWER_CONF
 
 typedef enum {
     AWG_KEEPALIVE_CONFIG = 0, /* what the profile says */

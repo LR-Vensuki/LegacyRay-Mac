@@ -23,7 +23,8 @@ extern "C" {
 #define GEO_CODE_MAX 64
 
 /* where the daemon keeps downloads and extracts; readable by the app */
-#define LR_GEO_DIR "/var/mobile/Library/Preferences/LegacyRay/geo"
+#include "../../common/senko_paths.h"
+#define LR_GEO_DIR SENKO_GEO_DIR
 
 /* <dir>/site-<code>.txt or ip-<code>.txt */
 int geo_file_path(char *out, size_t cap, const char *dir, char kind, const char *code);

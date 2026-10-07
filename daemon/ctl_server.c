@@ -39,7 +39,7 @@
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 #endif
 
-#define AWG_PID_PATH "/var/run/legacyrayawgd.pid"
+#define AWG_PID_PATH SENKO_AWG_PID
 
 /* one connect has to answer while a client is still waiting, and every attempt
    carries a dns lookup, a handshake and a verify probe */
@@ -91,7 +91,21 @@ static void ctl_token_path_from_sock(const char *sock, char *out, size_t cap) {
     memcpy(out + n, ".token", 7);
 }
 
+#if defined(LR_MACOS)
+/* os x: the token and the socket belong to the one account that may drive the
+   daemon (mode 0600); every account there shares the staff group, so a group
+   grant would hand the tunnel to all of them */
+#define CTL_OWNER_UID senko_client_uid()
+#define CTL_OWNER_GID ((gid_t)0)
+#define CTL_TOKEN_MODE 0600
+#define CTL_SOCK_MODE 0600
+#else
 #define CTL_MOBILE_GID 501 /* mobile group id */
+#define CTL_OWNER_UID ((uid_t)0)
+#define CTL_OWNER_GID ((gid_t)CTL_MOBILE_GID)
+#define CTL_TOKEN_MODE 0640
+#define CTL_SOCK_MODE 0660
+#endif
 
 static int write_ctl_token(const char *path, char *token_out, size_t token_cap) {
     if (!path || !token_out || token_cap < 33) return -1;
@@ -115,13 +129,13 @@ static int write_ctl_token(const char *path, char *token_out, size_t token_cap) 
 #ifdef O_NOFOLLOW
     flags |= O_NOFOLLOW;
 #endif
-    int fd = open(tmp, flags, 0640);
+    int fd = open(tmp, flags, CTL_TOKEN_MODE);
     if (fd < 0) return -1;
     char line[48];
     int ln = snprintf(line, sizeof line, "%s\n", token_out);
     ssize_t w = (ln > 0) ? write(fd, line, (size_t)ln) : -1;
-    int secure = fchmod(fd, 0640) == 0;
-    if (fchown(fd, 0, CTL_MOBILE_GID) != 0 && geteuid() == 0) secure = 0;
+    int secure = fchmod(fd, CTL_TOKEN_MODE) == 0;
+    if (fchown(fd, CTL_OWNER_UID, CTL_OWNER_GID) != 0 && geteuid() == 0) secure = 0;
     if (fsync(fd) != 0) secure = 0;
     if (close(fd) != 0) secure = 0;
     if (w != (ssize_t)ln) {
@@ -137,8 +151,8 @@ static int write_ctl_token(const char *path, char *token_out, size_t token_cap) 
 
 static int tighten_sock_perms(const char *path) {
     if (!path || !path[0]) return -1;
-    if (chown(path, 0, CTL_MOBILE_GID) != 0 && geteuid() == 0) return -1;
-    return chmod(path, 0660);
+    if (chown(path, CTL_OWNER_UID, CTL_OWNER_GID) != 0 && geteuid() == 0) return -1;
+    return chmod(path, CTL_SOCK_MODE);
 }
 
 static int token_equal(const char *a, const char *b) {
@@ -453,7 +467,11 @@ static int ctl_peer_allowed(int fd) {
     gid_t gid = 0;
     if (getpeereid(fd, &uid, &gid) != 0)
         return 1; /* old ios may not expose peer creds; the token guards writes */
+#if defined(LR_MACOS)
+    return uid == 0 || uid == senko_client_uid();
+#else
     return uid == 0 || uid == 501;
+#endif
 #else
     (void)fd;
     return 1;

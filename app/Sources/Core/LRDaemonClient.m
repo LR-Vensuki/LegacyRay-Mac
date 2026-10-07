@@ -17,10 +17,11 @@
 extern char **environ;
 
 static NSString *LRKickPath(void) {
-    static const char *paths[] = { "/usr/bin/legacyray-kick", "/bin/legacyray-kick", NULL };
+    static const char *paths[] = { SENKO_USR_BIN "/legacyray-kick", "/usr/bin/legacyray-kick",
+                                   "/bin/legacyray-kick", NULL };
     for (NSUInteger i = 0; paths[i]; ++i)
         if (access(paths[i], X_OK) == 0) return [NSString stringWithUTF8String:paths[i]];
-    return @"/usr/bin/legacyray-kick";
+    return @SENKO_USR_BIN "/legacyray-kick";
 }
 
 /* a CONNECT reply streams "STATE connecting" before its final state, so the
@@ -312,7 +313,7 @@ static int LRWriteAll(int fd, const void *buf, size_t len) {
 
 /* the helper leaves its reason in a log the app can read when it fails */
 static NSString *LRKickLogTail(void) {
-    NSArray *paths = [NSArray arrayWithObjects:@"/var/log/legacyray-kick.log",
+    NSArray *paths = [NSArray arrayWithObjects:@SENKO_KICK_LOG,
                       @(SENKO_CRASH_DIR "/kick.log"), nil];
     NSString *best = nil;
     NSDate *bestDate = nil;
@@ -956,7 +957,7 @@ static NSData *LRDecodeBlob(NSString *reply, NSString **error) {
 
 - (void)restoreBackupData:(NSData *)data reply:(void (^)(NSString *))done {
     if (![data length] ||
-        ![self stageData:data atPath:@"/var/mobile/Library/Preferences/LegacyRay/import.lray"]) {
+        ![self stageData:data atPath:@SENKO_BACKUP_IMPORT]) {
         if (done) done(@"ERR could not stage the backup");
         return;
     }
@@ -1013,8 +1014,8 @@ static NSData *LRDecodeBlob(NSString *reply, NSString **error) {
 /* nothing to ask the helper when both of its state files say it is idle */
 static BOOL LRAWGIdle(void) {
     struct stat st;
-    if (stat("/var/run/legacyrayawgd.pid", &st) == 0 || errno != ENOENT) return NO;
-    FILE *f = fopen("/var/run/legacyrayawgd.status", "r");
+    if (stat(SENKO_AWG_PID, &st) == 0 || errno != ENOENT) return NO;
+    FILE *f = fopen(SENKO_AWG_STATUS, "r");
     if (!f) return errno == ENOENT;
     char line[64] = {0};
     if (!fgets(line, sizeof line, f)) line[0] = '\0';
