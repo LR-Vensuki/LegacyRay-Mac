@@ -6,6 +6,9 @@
 #   make install    copy the .deb to THEOS_DEVICE_IP and dpkg -i it
 #   make test       the host test suite (needs `make deps HOST=1` first)
 #   make xcode      regenerate xcode/LegacyRay.xcodeproj
+#   make deps-mac   static openssl + libssh2 for os x (once, after make deps)
+#   make mac        mac/build/LegacyRay.app for os x 10.8+
+#   make mac-zip    packages/LegacyRay-<version>-mac.zip
 #   make clean
 #
 # see make/config.mk for the toolchain variables (THEOS, LR_SDK, ...)
@@ -25,7 +28,8 @@ THEOS_DEVICE_IP ?=
 THEOS_DEVICE_PORT ?= 22
 THEOS_DEVICE_USER ?= root
 
-.PHONY: all deps daemon tweaks app package install test xcode clean check-version resources
+.PHONY: all deps daemon tweaks app package install test xcode clean check-version resources \
+        deps-mac mac mac-zip
 
 all: check-version daemon tweaks app
 
@@ -49,6 +53,15 @@ app:
 
 resources:
 	python3 scripts/make_resources.py
+
+deps-mac:
+	./scripts/build_deps_mac.sh
+
+mac:
+	$(MAKE) -C mac
+
+mac-zip:
+	$(MAKE) -C mac zip
 
 package: all
 	@rm -rf $(STAGE)
@@ -97,6 +110,8 @@ clean:
 	$(MAKE) -C tweaks/tlsfix clean
 	$(MAKE) -C tweaks/status clean
 	$(MAKE) -C app clean
+	$(MAKE) -C daemon -f Makefile.mac clean
+	$(MAKE) -C mac clean
 	rm -rf $(STAGE)
 
 CYDIA_REPO = $(HOME)/Theos-Projects/cydia-repo

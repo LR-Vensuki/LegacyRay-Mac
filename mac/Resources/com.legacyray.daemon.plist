@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.legacyray.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/legacyray/bin/legacyrayd</string>
+    <string>--managed</string>
+    <string>--ctl</string>
+    <string>/var/tmp/legacyrayd.sock</string>
+    <string>--config</string>
+    <string>/Library/Application Support/LegacyRay/legacyray.cfg</string>
+    <string>--full-device</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>3</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/var/log/legacyray-system.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/legacyray-system.log</string>
+  <key>WorkingDirectory</key>
+  <string>/</string>
+</dict>
+</plist>
