@@ -83,8 +83,11 @@ int main(void) {
        strstr(pf, "192.0.2.0/25") == NULL &&
        strstr(pf, "table <legacyray_block> persist { 192.0.2.0/24, 203.0.113.128/25 }") != NULL);
     const char *block_rule = strstr(pf, "block return out quick on en0 inet from any to <legacyray_block>");
-    const char *translation = strstr(pf, "nat on en0");
-    ok("pf rejects blocked cidrs before redirect", block_rule && translation && block_rule < translation);
+    const char *translation = strstr(pf, "rdr pass on lo0");
+    const char *redirect = strstr(pf, "route-to lo0");
+    ok("pf rejects blocked cidrs before redirect", block_rule && redirect && block_rule < redirect);
+    /* pfctl refuses a filter rule ahead of a translation rule */
+    ok("pf translation precedes filtering", block_rule && translation && translation < block_rule);
 
     ok("compat pf keeps cidr policy without tables",
        routing_pf_conf_rules("203.0.113.10", &policy, ifnames, 1,

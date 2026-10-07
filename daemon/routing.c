@@ -365,23 +365,38 @@ static routing_status_t routing_pf_conf_build(const char *server_ips,
     switch (mode) {
         case ROUTING_PF_ROUTE_TO_LO0:
         case ROUTING_PF_ROUTE_TO_LO0_NOGW: {
+            /* pfctl takes translation before filtering and refuses the other
+               order outright; nat and rdr run first whatever the text says,
+               so the order of the blocks below changes no verdict */
             pf_bypass_table(&w, server_ips, rules);
-            pf_ip_blocks(&w, rules, ifnames, if_count, 1);
-            pf_port_filters(&w, rules, ifnames, if_count);
             pf_port_no_translation(&w, rules, ifnames, if_count);
+#if !defined(LR_MACOS)
             for (size_t i = 0; i < if_count; i++)
                 pf_ap(&w, "nat on %s inet proto tcp from any to ! <legacyray_bypass> -> 127.0.0.1\n",
                       ifnames[i]);
+#endif
             pf_ap(&w, "rdr pass on lo0 inet proto tcp from any to ! <legacyray_bypass> -> 127.0.0.1 port %d\n",
                   redir_port);
+#if defined(LR_MACOS)
+            /* a query the mac sends itself never enters en0, so the rdr on the
+               interface below would not see it: it is routed to lo0 like tcp */
+            pf_ap(&w, "rdr pass on lo0 inet proto udp from any to any port 53 -> 127.0.0.1 port %d\n",
+                  dns_local_port);
+#endif
             for (size_t i = 0; i < if_count; i++)
                 pf_ap(&w, "rdr pass on %s proto udp from any to any port 53 -> 127.0.0.1 port %d\n",
                       ifnames[i], dns_local_port);
+            pf_ip_blocks(&w, rules, ifnames, if_count, 1);
+            pf_port_filters(&w, rules, ifnames, if_count);
             for (size_t i = 0; i < if_count; i++) {
                 const char *ifn = ifnames[i];
                 pf_ap(&w, "pass out quick on %s inet proto tcp from any to <legacyray_bypass> flags S/SA keep state\n"
                           "pass out quick on %s route-to lo0 inet proto tcp from any to ! <legacyray_bypass> flags S/SA keep state\n",
                       ifn, ifn);
+#if defined(LR_MACOS)
+                pf_ap(&w, "pass out quick on %s route-to lo0 inet proto udp from any to any port 53 keep state\n",
+                      ifn);
+#endif
                 pf_block_triplet(&w, ifn);
             }
             pf_ap(&w, "pass in all keep state\n");
@@ -459,8 +474,6 @@ static routing_status_t routing_pf_conf_build(const char *server_ips,
         case ROUTING_PF_LEGACY_RDR: {
             pf_ap(&w, "set skip on lo0\n");
             pf_bypass_table(&w, server_ips, rules);
-            pf_ip_blocks(&w, rules, ifnames, if_count, 1);
-            pf_port_filters(&w, rules, ifnames, if_count);
             pf_port_no_translation(&w, rules, ifnames, if_count);
             for (size_t i = 0; i < if_count; i++) {
                 pf_ap(&w, "rdr pass on %s inet proto tcp from any to ! <legacyray_bypass> -> 127.0.0.1 port %d\n",
@@ -468,6 +481,8 @@ static routing_status_t routing_pf_conf_build(const char *server_ips,
                 pf_ap(&w, "rdr pass on %s proto udp from any to any port 53 -> 127.0.0.1 port %d\n",
                       ifnames[i], dns_local_port);
             }
+            pf_ip_blocks(&w, rules, ifnames, if_count, 1);
+            pf_port_filters(&w, rules, ifnames, if_count);
             for (size_t i = 0; i < if_count; i++)
                 pf_block_triplet(&w, ifnames[i]);
             pf_ap(&w, "pass in all keep state\n");
@@ -475,18 +490,23 @@ static routing_status_t routing_pf_conf_build(const char *server_ips,
         }
 
         case ROUTING_PF_COMPAT_RDR: {
-            pf_ip_blocks(&w, rules, ifnames, if_count, 0);
-            pf_port_filters(&w, rules, ifnames, if_count);
             pf_port_no_translation(&w, rules, ifnames, if_count);
             for (size_t i = 0; i < if_count; i++) {
                 const char *ifn = ifnames[i];
-                pf_ap(&w, "rdr pass on %s inet proto tcp from any to ! ", ifn);
+                /* pf cannot negate an inline list ("to ! { ... }" is a
+                   syntax error), so the bypass goes first as a no-rdr rule
+                   and the redirect takes the rest */
+                pf_ap(&w, "no rdr on %s inet proto tcp from any to ", ifn);
                 pf_direct_bypass_set(&w, server_ips, rules);
-                pf_ap(&w, " -> 127.0.0.1 port %d\n", redir_port);
+                pf_ap(&w, "\nrdr pass on %s inet proto tcp from any to any -> 127.0.0.1 port %d\n",
+                      ifn, redir_port);
                 pf_ap(&w, "rdr pass on %s inet proto udp from any to any port 53 -> 127.0.0.1 port %d\n",
                       ifn, dns_local_port);
-                pf_ap(&w, "pass out on %s all\n", ifn);
             }
+            pf_ip_blocks(&w, rules, ifnames, if_count, 0);
+            pf_port_filters(&w, rules, ifnames, if_count);
+            for (size_t i = 0; i < if_count; i++)
+                pf_ap(&w, "pass out on %s all\n", ifnames[i]);
             break;
         }
 
