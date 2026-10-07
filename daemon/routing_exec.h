@@ -83,14 +83,26 @@ int routing_pick_free_port(int start, int end);
 /* reserve a free udp port for the local dns forwarder */
 int routing_pick_free_udp_port(int start, int end);
 
+/* proves a ruleset the tool accepted with a live connection: 0 when traffic
+   reached the transparent listener on redir_port. ipfw is non-zero for the
+   numbered ipfw rules, whose listener reads the destination with getsockname */
+typedef int (*routing_exec_check_fn)(void *ctx, int redir_port, int ipfw);
+
 /* enable the first compatible full-device backend without resolving dns
    force_pf_mode pins one pf syntax variant and fails instead of walking the
-   ladder; SENKO_PF_MODE_AUTO keeps the full ladder */
+   ladder; SENKO_PF_MODE_AUTO keeps the full ladder. with a check, a variant
+   that is accepted but redirects nothing counts as rejected and the ladder
+   moves on, instead of stopping on the first variant pfctl takes */
 rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
                                const char *server_ip, const char *server_ips,
                                const char *dns_upstream, int dns_local_port,
                                dns_block_response_t block_response,
-                               ruleset_t *rules, int force_pf_mode);
+                               ruleset_t *rules, int force_pf_mode,
+                               routing_exec_check_fn check, void *check_ctx);
+
+/* what made the last routing_exec_up give up on pf ("route-to-lo0: ..."),
+   empty when it did not */
+const char *routing_exec_last_error(void);
 
 /* the ruleset the kernel is actually running: the pf config as it was handed
    to pfctl, or the ipfw rules as they were spawned. returns 0 when one was

@@ -100,7 +100,7 @@
 
 - (void)fire {
     if (_handler) _handler(self);
-    else [self sendAction:[self action] to:[self target]];
+    else [self lr_fire];
 }
 
 - (void)mouseDown:(NSEvent *)event {

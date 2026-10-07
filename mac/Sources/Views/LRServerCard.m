@@ -117,13 +117,13 @@ LR_CARD_SETTER(setValue, _value)
         [self setPressed:inside];
     }
     [self setPressed:NO];
-    if (inside) [self sendAction:[self action] to:[self target]];
+    if (inside) [self lr_fire];
 }
 
 - (void)step:(NSInteger)direction {
     if (!_swipeAction) return;
     _swipeDirection = direction;
-    [self sendAction:_swipeAction to:[self target]];
+    [self lr_fire:_swipeAction];
 }
 
 /* a trackpad swipe (three fingers, or two where the system says so) */

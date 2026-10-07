@@ -59,5 +59,23 @@ LegacyRay.app/Contents/Helpers/legacyrayd --managed --ctl /var/tmp/legacyrayd.so
 запущенным от пользователя (без pf, только SOCKS). В этом режиме доступны
 ссылки `legacyray://dev/…`: `prefs/<general|connection|routing|sites|subs|network|advanced>`,
 `window/<main|check|diag|awg|ssh|about|server|share>`, `theme/<auto|classic|flat>`,
-`lang/<ru|en|zh>`, `connect/<часть имени>`, `ping`, `reload`, `close` —
-через них сняты скриншоты в `docs/`.
+`lang/<ru|en|zh>`, `connect/<часть имени>`, `ping`, `reload`, `close`,
+`click/<power|card>` (настоящий щелчок через оконный сервер) — через них
+сняты скриншоты в `docs/`.
+
+## Как демон заворачивает трафик Mac
+
+`daemon/c_backend.c`, сверху вниз; каждый шаг проверяется живым соединением
+(демон сам идёт на example.com:80 и ждёт его на своём прозрачном порту):
+
+1. pf, `route-to lo0` + `rdr` на lo0 — с адресом Mac в источнике (как sshuttle);
+2. pf, то же с `nat` в 127.0.0.1 — вариант iPhone;
+3. ipfw (есть только в 10.8–10.9);
+4. системный прокси: `networksetup -setsocksfirewallproxy` для каждой
+   включённой службы сети (`daemon/mac_sysproxy.c`); прежние настройки
+   лежат в `/Library/Application Support/LegacyRay/sysproxy.state` и
+   возвращаются при отключении, при старте демона после сбоя и при удалении.
+
+Перед pf демон проверяет, что основной набор правил проходит якоря
+`com.apple/*` (`pfctl -s nat`, `pfctl -s rules`), и при необходимости
+загружает `/etc/pf.conf`; свой `pf.conf` без этих якорей не трогается.

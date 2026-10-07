@@ -370,11 +370,15 @@ static routing_status_t routing_pf_conf_build(const char *server_ips,
                so the order of the blocks below changes no verdict */
             pf_bypass_table(&w, server_ips, rules);
             pf_port_no_translation(&w, rules, ifnames, if_count);
-#if !defined(LR_MACOS)
+#if defined(LR_MACOS)
+            /* os x tries the turn to lo0 twice: with the mac's own address
+               as the source, the way sshuttle does it, and then the ios way,
+               with the source made 127.0.0.1 first */
+            if (mode == ROUTING_PF_ROUTE_TO_LO0_NOGW)
+#endif
             for (size_t i = 0; i < if_count; i++)
                 pf_ap(&w, "nat on %s inet proto tcp from any to ! <legacyray_bypass> -> 127.0.0.1\n",
                       ifnames[i]);
-#endif
             pf_ap(&w, "rdr pass on lo0 inet proto tcp from any to ! <legacyray_bypass> -> 127.0.0.1 port %d\n",
                   redir_port);
 #if defined(LR_MACOS)

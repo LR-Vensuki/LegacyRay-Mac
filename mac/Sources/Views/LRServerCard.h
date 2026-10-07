@@ -2,9 +2,9 @@
    hairline on yosemite) with the flag, the name, the protocol and the
    latency; clicking it opens the server, the arrow keys and a two finger
    swipe step to the next one */
-#import <Cocoa/Cocoa.h>
+#import "LRControl.h"
 
-@interface LRServerCard : NSControl {
+@interface LRServerCard : LRControl {
     NSString *_countryCode;
     NSString *_title;
     NSString *_detail;

@@ -1,9 +1,9 @@
 /* a key on the bar: the ios 6 bar button on the denim (dark glass in a
    pressed rim, a glyph or a word in white), a borderless word or glyph in
    the tint on yosemite. a menu, when set, drops from it on mouse down */
-#import <Cocoa/Cocoa.h>
+#import "LRControl.h"
 
-@interface LRBarKey : NSControl {
+@interface LRBarKey : LRControl {
     NSString *_title;
     NSImage *_glyph;
     NSMenu *_dropMenu;

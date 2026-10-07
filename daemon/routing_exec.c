@@ -239,6 +239,7 @@ void routing_scopedroute_restore(const char *prev) {
    enable pf by reference (-E hands out a token, -X gives it back). legacyray
    does the same, so taking the tunnel down never disables pf under somebody
    else, and the main ruleset is only ever the stock one */
+static int run_spawn_quiet(const char *bin, char *const argv[]);
 static char g_pf_token[32];
 /* net.inet.ip.forwarding as it was before the first tunnel, put back after */
 static char g_forwarding_prev[8];
@@ -278,17 +279,52 @@ static int capture_all(const char *bin, char *const argv[], char *buf, size_t ca
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
+/* a line of text that starts with prefix */
+static int has_line(const char *text, const char *prefix) {
+    size_t l = strlen(prefix);
+    for (const char *p = text; p && *p; ) {
+        while (*p == ' ' || *p == '\t') ++p;
+        if (strncmp(p, prefix, l) == 0) return 1;
+        p = strchr(p, '\n');
+        if (p) ++p;
+    }
+    return 0;
+}
+
+/* the main ruleset hands rdr and filtering to the com.apple anchors */
+static int mac_pf_walks_anchor(const char *pfctl) {
+    static char out[16384];
+    char *nat[] = { (char *)pfctl, (char *)"-s", (char *)"nat", NULL };
+    if (capture_all(pfctl, nat, out, sizeof out) != 0 ||
+        !has_line(out, "rdr-anchor \"com.apple/*\""))
+        return 0;
+    char *rules[] = { (char *)pfctl, (char *)"-s", (char *)"rules", NULL };
+    return capture_all(pfctl, rules, out, sizeof out) == 0 &&
+           has_line(out, "anchor \"com.apple/*\"");
+}
+
 /* the anchor only takes effect while the main ruleset walks the com.apple
-   anchors. the system loads /etc/pf.conf at boot, but a hand-flushed pf has
-   no anchors left */
-static void mac_pf_main_ruleset(const char *pfctl) {
-    char out[4096];
-    char *show[] = { (char *)pfctl, (char *)"-s", (char *)"Anchors", NULL };
-    if (capture_all(pfctl, show, out, sizeof out) == 0 && strstr(out, "com.apple"))
-        return;
-    fprintf(stderr, "legacyrayd: pf main ruleset has no com.apple anchor, loading /etc/pf.conf\n");
+   anchors. /etc/pf.conf says so, but nothing guarantees it was loaded: pf is
+   off on a stock mac, and the application firewall creates its own anchors
+   under com.apple without a main ruleset that would ever reach them. a
+   pf.conf without the anchors is somebody's own, and is left alone */
+static int mac_pf_main_ruleset(const char *pfctl) {
+    if (mac_pf_walks_anchor(pfctl)) return 1;
+    static char conf[16384];
+    int fd = open("/etc/pf.conf", O_RDONLY);
+    ssize_t n = fd >= 0 ? read(fd, conf, sizeof conf - 1) : -1;
+    if (fd >= 0) close(fd);
+    conf[n > 0 ? n : 0] = '\0';
+    if (!has_line(conf, "rdr-anchor \"com.apple/*\"") ||
+        !has_line(conf, "anchor \"com.apple/*\"")) {
+        fprintf(stderr, "legacyrayd: pf: /etc/pf.conf has no com.apple anchors\n");
+        return 0;
+    }
+    fprintf(stderr, "legacyrayd: pf: loading /etc/pf.conf, the main ruleset did not "
+                    "walk the com.apple anchors\n");
     char *load[] = { (char *)pfctl, (char *)"-q", (char *)"-f", (char *)"/etc/pf.conf", NULL };
-    (void)routing_spawn(pfctl, load);
+    (void)run_spawn_quiet(pfctl, load);
+    return mac_pf_walks_anchor(pfctl);
 }
 
 static void mac_pf_enable(const char *pfctl) {
@@ -628,6 +664,27 @@ static void close_dns_socket(routing_exec_t *st) {
 
 /* pf needs a real egress interface */
 
+#if defined(LR_MACOS)
+/* a mac reaches the internet over ethernet and wifi (en*), but also over a
+   usb modem or pppoe (ppp*) and whatever a driver names its port. what is
+   left out: loopback, other tunnels, apple's peer to peer links (airdrop and
+   continuity live on awdl/p2p and must keep their ipv6), internet sharing
+   and virtual machine bridges */
+static int mac_iface_wanted(const struct ifaddrs *p) {
+    static const char *skip[] = { "lo", "utun", "tun", "tap", "gif", "stf", "awdl",
+                                  "p2p", "llw", "bridge", "vmnet", "vboxnet",
+                                  "ipsec", "ap" };
+    if (!(p->ifa_flags & IFF_UP) || (p->ifa_flags & IFF_LOOPBACK)) return 0;
+    for (size_t i = 0; i < sizeof skip / sizeof skip[0]; ++i) {
+        size_t l = strlen(skip[i]);
+        if (strncmp(p->ifa_name, skip[i], l) == 0 &&
+            (p->ifa_name[l] >= '0' && p->ifa_name[l] <= '9'))
+            return 0;
+    }
+    return 1;
+}
+#endif
+
 static size_t collect_ifaces(char ifnames[][32], size_t cap) {
     struct ifaddrs *ifa = NULL;
     if (getifaddrs(&ifa) != 0) return 0;
@@ -635,8 +692,12 @@ static size_t collect_ifaces(char ifnames[][32], size_t cap) {
     for (struct ifaddrs *p = ifa; p && n < cap; p = p->ifa_next) {
         if (!p->ifa_name) continue;
         if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) continue;
+#if defined(LR_MACOS)
+        int wanted = mac_iface_wanted(p);
+#else
         int wanted = (strncmp(p->ifa_name, "en", 2) == 0 ||
                       strncmp(p->ifa_name, "pdp_ip", 6) == 0);
+#endif
         if (!wanted) continue;
         int seen = 0;
         for (size_t i = 0; i < n; ++i) if (strcmp(ifnames[i], p->ifa_name) == 0) seen = 1;
@@ -816,7 +877,6 @@ static int apply_pf_mode(const char *pfctl, const char *server_ips,
     free(conf);
 
 #if defined(LR_MACOS)
-    mac_pf_main_ruleset(pfctl);
     mac_pf_enable(pfctl);
 #else
     char *enargv[] = { (char *)pfctl, (char *)"-q", (char *)"-e", NULL };
@@ -1218,17 +1278,26 @@ static void flush_system_dns(void) {
     (void)run_spawn_quiet(killall, argv);
 }
 
+/* why the last ladder found nothing, past the memset of routing_exec_down */
+static char g_last_error[192];
+
+const char *routing_exec_last_error(void) {
+    return g_last_error;
+}
+
 rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
                                const char *server_ip, const char *server_ips,
                                const char *dns_upstream, int dns_local_port,
                                dns_block_response_t block_response,
-                               ruleset_t *rules, int force_pf_mode) {
+                               ruleset_t *rules, int force_pf_mode,
+                               routing_exec_check_fn check, void *check_ctx) {
     if (!st || !server_ip || !server_ips || !dns_upstream || dns_local_port <= 0)
         return REXEC_ERR_ARG;
     if (st->mode != ROUTING_MODE_NONE || st->dns_thread) {
         routing_exec_down(st);
     }
     memset(st, 0, sizeof *st);
+    g_last_error[0] = '\0';
     if (tables_reset() != 0) return REXEC_ERR_SPAWN;
     st->dns_fd = -1;
     st->socks_port = socks_port;
@@ -1265,6 +1334,8 @@ rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
         size_t if_count = collect_ifaces(ifnames, ROUTING_MAX_IFS);
         if (if_count == 0)
             fprintf(stderr, "legacyrayd: pfctl found but no IPv4 en*/pdp_ip* interface\n");
+        if (if_count == 0)
+            snprintf(g_last_error, sizeof g_last_error, "no network interface with ipv4");
         if (if_count > 0) {
             fprintf(stderr, "legacyrayd: pf trying %zu interface(s):", if_count);
             for (size_t i = 0; i < if_count; ++i) fprintf(stderr, " %s", ifnames[i]);
@@ -1281,6 +1352,18 @@ rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
                 fprintf(stderr, "legacyrayd: pf mode pinned to %s\n",
                         routing_pf_mode_name((routing_pf_mode_t)force_pf_mode));
             }
+#if defined(LR_MACOS)
+/* only the two route-to forms catch what the mac sends itself: the rdr forms
+   act on packets that come in on an interface, and divert-to and rdr-to are
+   openbsd grammar apple's pfctl refuses */
+            else {
+                mode_count = ROUTING_PF_ROUTE_TO_LO0_NOGW + 1;
+            }
+            int main_ok = mac_pf_main_ruleset(pfctl);
+            if (!main_ok)
+                fprintf(stderr, "legacyrayd: pf: the main ruleset does not walk the "
+                                "com.apple anchors, the rules below cannot take effect\n");
+#endif
             for (int m = first_mode; m < mode_count; ++m) {
                 clear_pf();
                 last_pf_mode = m;
@@ -1288,10 +1371,20 @@ rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
                                             redir, st->dns_local_port,
                                             (routing_pf_mode_t)m,
                                             pf_detail, sizeof pf_detail);
-                if (applied != 0)
+                if (applied == 0 && check && check(check_ctx, redir, 0) != 0) {
+                    fprintf(stderr, "legacyrayd: pf mode %s was accepted but no traffic "
+                                    "reached the listener\n",
+                            routing_pf_mode_name((routing_pf_mode_t)m));
+                    snprintf(pf_detail, sizeof pf_detail,
+                             "accepted, but nothing was redirected");
+                    applied = -1;
+                }
+                if (applied != 0) {
                     snprintf(st->pf_last_error, sizeof st->pf_last_error, "%s: %s",
                              routing_pf_mode_name((routing_pf_mode_t)m),
                              pf_detail[0] ? pf_detail : "rejected");
+                    snprintf(g_last_error, sizeof g_last_error, "%s", st->pf_last_error);
+                }
                 if (applied == 0) {
                     st->mode = ROUTING_MODE_PF;
                     st->redir_port = redir;
@@ -1314,22 +1407,37 @@ rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
             fprintf(stderr, "legacyrayd: %s pf rule mode(s) rejected (last mode %d: %s)\n",
                     mode_count - first_mode == 1 ? "the pinned" : "all",
                     last_pf_mode, pf_detail[0] ? pf_detail : "unknown pfctl error");
+#if defined(LR_MACOS)
+            if (!main_ok)
+                snprintf(g_last_error, sizeof g_last_error,
+                         "the main pf ruleset does not reach com.apple/* (%s)",
+                         st->pf_last_error);
+#endif
             clear_pf();
         }
     } else {
         fprintf(stderr, "legacyrayd: pfctl not found\n");
+        snprintf(g_last_error, sizeof g_last_error, "pfctl not found");
     }
 
     const char *ipfw = routing_find_ipfw();
     if (ipfw) {
         if (apply_ipfw(ipfw, server_ip, server_ips, redir, socks_port,
                        st->dns_local_port) == 0) {
-            st->mode = ROUTING_MODE_IPFW;
-            st->redir_port = redir;
             if (routing_scopedroute_disable(st->scoped_route_prev,
                                             sizeof st->scoped_route_prev) != 0)
                 fprintf(stderr, "legacyrayd: scopedroute tweak failed, "
                                 "ipfw fwd may not reach the listener\n");
+            if (check && check(check_ctx, redir, 1) != 0) {
+                fprintf(stderr, "legacyrayd: ipfw rules were accepted but no traffic "
+                                "reached the listener\n");
+                clear_ipfw();
+                routing_scopedroute_restore(st->scoped_route_prev);
+                st->scoped_route_prev[0] = '\0';
+                goto no_backend;
+            }
+            st->mode = ROUTING_MODE_IPFW;
+            st->redir_port = redir;
             if (start_dns_forwarder(st) != 0) {
                 routing_exec_down(st);
                 return REXEC_ERR_SPAWN;
@@ -1343,6 +1451,7 @@ rexec_status_t routing_exec_up(routing_exec_t *st, int socks_port,
         fprintf(stderr, "legacyrayd: ipfw not found in known paths or PATH\n");
     }
 
+no_backend:
     fprintf(stderr, "legacyrayd: no routing backend (need pfctl+ifaces or ipfw); "
             "full-device will not redirect\n");
     routing_exec_down(st);

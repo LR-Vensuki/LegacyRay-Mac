@@ -254,6 +254,23 @@
             [[LRTunnel shared] connectServerIndex:pick.index];
             [_main.sidebar selectCurrent];
         }
+    } else if ([what isEqualToString:@"click"]) {
+        /* a real click through the window server, at the middle of a control */
+        NSView *v = [arg isEqualToString:@"card"] ? (NSView *)_main.dashboard.card : (NSView *)_main.dashboard.power;
+        NSWindow *w = [v window];
+        NSRect r = [w convertRectToScreen:[v convertRect:[v bounds] toView:nil]];
+        CGFloat top = NSMaxY([[[NSScreen screens] objectAtIndex:0] frame]);
+        CGPoint p = CGPointMake(NSMidX(r), top - NSMidY(r));
+        NSLog(@"LRDEV click %@ at %@ target=%@ action=%@ enabled=%d cell=%@", arg, NSStringFromPoint(NSPointFromCGPoint(p)),
+              [(NSControl *)v target], NSStringFromSelector([(NSControl *)v action]), [(NSControl *)v isEnabled],
+              [(NSControl *)v cell]);
+        CGEventRef down = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, p, kCGMouseButtonLeft);
+        CGEventRef up = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, p, kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, down);
+        usleep(120000);
+        CGEventPost(kCGHIDEventTap, up);
+        CFRelease(down);
+        CFRelease(up);
     } else if ([what isEqualToString:@"ping"]) {
         [[LRCatalog shared] pingAll];
     } else if ([what isEqualToString:@"reload"]) {

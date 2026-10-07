@@ -2,7 +2,7 @@
    denim, the power glyph pressed into it and lit from behind by the state;
    a white disc in a thin ring on yosemite. the glyph (or the ring) breathes
    while a tunnel is coming up, the only animation on the dashboard */
-#import <Cocoa/Cocoa.h>
+#import "LRControl.h"
 
 typedef enum {
     LRPowerOff = 0,
@@ -11,7 +11,7 @@ typedef enum {
     LRPowerFault
 } LRPowerState;
 
-@interface LRPowerButton : NSControl {
+@interface LRPowerButton : LRControl {
     LRPowerState _powerState;
     BOOL _pressed;
     BOOL _tracking;

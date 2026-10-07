@@ -9,6 +9,7 @@
 #import "LRCatalog.h"
 #import "LRAWGProfiles.h"
 #import "LRDaemonSettings.h"
+#import "LRDaemonClient.h"
 #import "LRNetInfo.h"
 #import "LRImporter.h"
 #import "LRQRCode.h"
@@ -328,7 +329,35 @@
         NSInteger port = [ds integerForKey:@"socks_port" fallback:11080];
         note = [NSString stringWithFormat:@"%@  ·  SOCKS5 127.0.0.1:%ld", net, (long)port];
     }
+    if (_systemProxy && [LRTunnel shared].state == LRTunnelConnected)
+        note = [NSString stringWithFormat:@"%@  ·  %@", note, L(@"system proxy")];
     _dashboard.footnote = note;
+}
+
+/* the daemon walks pf first and only then sets itself as the system proxy;
+   the second covers the apps that follow the proxy settings, not the whole
+   mac, and the person should know which one they got */
+- (void)askConnectionMode {
+    LRTunnel *t = [LRTunnel shared];
+    if (t.state != LRTunnelConnected) {
+        _modeAsked = NO;
+        _systemProxy = NO;
+        return;
+    }
+    if (_modeAsked) return;
+    _modeAsked = YES;
+    [[LRDaemonClient shared] diagnostics:^(NSArray *facts) {
+        BOOL proxy = NO;
+        for (LRDiagFact *f in facts)
+            if ([f.key isEqualToString:@"backend"] &&
+                [f.value rangeOfString:@"system proxy"].location != NSNotFound)
+                proxy = YES;
+        if (!_modeAsked || [LRTunnel shared].state != LRTunnelConnected) return;
+        _systemProxy = proxy;
+        [self refreshFootnote];
+        if (proxy)
+            [LRToast show:L(@"The firewall did not let the traffic through, so LegacyRay became the system proxy: apps that follow it go through the tunnel.")];
+    }];
 }
 
 - (void)refresh {
@@ -353,6 +382,7 @@
         _shownError = nil;
     }
     [_sidebar setDaemonOffline:t.state == LRTunnelOffline && ![LRCatalog shared].loaded];
+    [self askConnectionMode];
     [self refreshCard];
     [self refreshFootnote];
     [self tick];

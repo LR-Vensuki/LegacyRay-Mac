@@ -1229,16 +1229,19 @@ static void LRSetOpensAtLogin(BOOL on) {
         [DS() setValue:[blocks objectAtIndex:(NSUInteger)i] forKey:@"block_response" done:nil];
     }];
     [f addSeparator];
-    NSArray *backends = [NSArray arrayWithObjects:@"auto", @"c", nil];
-    NSArray *backendNames = [NSArray arrayWithObjects:L(@"Automatic"), L(@"Firewall (pf)"), nil];
+    /* the daemon's "app_proxy" pin is the system proxy on os x */
+    NSArray *backends = [NSArray arrayWithObjects:@"auto", @"c", @"app_proxy", nil];
+    NSArray *backendNames = [NSArray arrayWithObjects:L(@"Automatic"), L(@"Firewall (pf)"),
+                             L(@"System proxy"), nil];
     NSString *backend = [ds stringForKey:@"force_backend"];
     NSUInteger bki = backend ? [backends indexOfObject:backend] : 0;
     [f addLabel:L(@"Backend") popup:backendNames selected:bki == NSNotFound ? 0 : (NSInteger)bki changed:^(NSInteger i) {
         [DS() setValue:[backends objectAtIndex:(NSUInteger)i] forKey:@"force_backend" done:nil];
     }];
-    NSArray *pfModes = [NSArray arrayWithObjects:@"auto", @"0", @"1", @"6", @"7", nil];
-    NSArray *pfNames = [NSArray arrayWithObjects:L(@"Automatic"), @"route-to lo0", @"route-to lo0 (no gw)",
-                        @"legacy rdr", @"compat rdr", nil];
+    /* the two forms that turn the mac's own packets around; the rdr forms of
+       the iphone only see what comes in on an interface */
+    NSArray *pfModes = [NSArray arrayWithObjects:@"auto", @"0", @"1", nil];
+    NSArray *pfNames = [NSArray arrayWithObjects:L(@"Automatic"), @"route-to lo0", @"route-to lo0 + nat", nil];
     NSString *pf = [ds stringForKey:@"force_pf_mode"];
     NSUInteger pi = pf ? [pfModes indexOfObject:pf] : 0;
     [f addLabel:L(@"pf variant") popup:pfNames selected:pi == NSNotFound ? 0 : (NSInteger)pi changed:^(NSInteger i) {
@@ -1250,7 +1253,7 @@ static void LRSetOpensAtLogin(BOOL on) {
     [f addCheckBox:L(@"Take device-gated feeds") on:[ds boolForKey:@"sub_ignore_gating" fallback:NO] changed:^(BOOL on) {
         [DS() setBool:on forKey:@"sub_ignore_gating"];
     }];
-    [f addNote:L(@"LegacyRay sends the traffic of this Mac to the tunnel with pf, in its own anchor next to the system's. Pin a pf variant only to track down a problem; Automatic walks the whole ladder.")];
+    [f addNote:L(@"LegacyRay sends the traffic of this Mac to the tunnel with pf, in its own anchor next to the system's. If pf does not let it through, LegacyRay becomes the system proxy instead: that covers the apps that follow the proxy settings. Pin a backend or a pf variant only to track down a problem.")];
     [f finish];
     return f;
 }

@@ -297,12 +297,24 @@ static rule_action_t match_address(ruleset_t *rules, const vless_dest_t *dest,
 static loop_route_t daemon_route(void *ctx, const vless_dest_t *dest, const char *host) {
     daemon_ctl_t *d = (daemon_ctl_t *)ctx;
     if (!d || !dest || !d->settings.rules_enabled || !d->rules) return LOOP_ROUTE_PROXY;
-    /* a socks request by name comes from the daemon's own probes or from a
-       client on the lan, never from the connect hook: it keeps the tunnel */
-    if (dest->atyp == VLESS_ADDR_DOMAIN) return LOOP_ROUTE_PROXY;
     ruleset_t *rules = d->rules;
     rule_action_t fallback = d->settings.rules_default ? RULE_ACTION_DIRECT
                                                        : RULE_ACTION_PROXY;
+    if (dest->atyp == VLESS_ADDR_DOMAIN) {
+        /* a socks request by name comes from the daemon's own probes or from a
+           client on the lan, never from the connect hook: it keeps the tunnel.
+           behind the system proxy of os x it is how every app asks, and the
+           name is all the domain rules get to see. the daemon's own checks
+           ask for example.com and have to measure the tunnel */
+        if (!d->c_backend.sys_proxy || strcmp(dest->domain, "example.com") == 0)
+            return LOOP_ROUTE_PROXY;
+        size_t idx = SIZE_MAX;
+        rule_action_t by_name = ruleset_match_domain(rules, dest->domain, &idx);
+        if (idx != SIZE_MAX) return route_of(by_name);
+        int port_hit = 0;
+        rule_action_t by_port = match_address(rules, dest, &port_hit);
+        return route_of(port_hit ? by_port : fallback);
+    }
     int hit = 0;
     rule_action_t by_address = match_address(rules, dest, &hit);
     if (!host) {
@@ -676,6 +688,8 @@ int daemon_ctl_diag(void *ctx, char *buf, size_t cap, size_t *len) {
         diag_add(buf, cap, &off, "backend", "socks only (full-device off)");
     else if (d->go.active)
         diag_add(buf, cap, &off, "backend", "go core on %s", d->go.route.ifname);
+    else if (d->c_backend.sys_proxy)
+        diag_add(buf, cap, &off, "backend", "c core, system proxy");
     else if (d->c_backend.app_proxy)
         diag_add(buf, cap, &off, "backend", "c core, connect hook");
     else if (d->c_backend.active)

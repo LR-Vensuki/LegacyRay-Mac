@@ -18,6 +18,10 @@
     LRBarKey *_checkKey;
     NSString *_shownError;
     BOOL _yosemiteChrome;
+    /* what carries this connection: asked once per connect, YES when pf
+       would not and the daemon fell back to the system proxy */
+    BOOL _modeAsked;
+    BOOL _systemProxy;
 }
 @property (nonatomic, readonly) LRSidebar *sidebar;
 @property (nonatomic, readonly) LRDashboardView *dashboard;

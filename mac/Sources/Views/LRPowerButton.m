@@ -375,7 +375,7 @@ static void LRFill(CGContextRef ctx, NSColor *c) {
         [self setPressed:inside];
     }
     [self setPressed:NO];
-    if (inside) [self sendAction:[self action] to:[self target]];
+    if (inside) [self lr_fire];
 }
 
 - (BOOL)acceptsFirstResponder {

@@ -19,6 +19,7 @@ extern "C" {
 typedef struct {
     int            active;
     int            app_proxy; /* traffic arrives through the connect hook, not a listener */
+    int            sys_proxy; /* os x: apps reach the socks port through the system proxy */
     int            redir_port;
     routing_exec_t rules; /* pf rdr, or numbered ipfw rules plus the dns forwarder */
     routing_fwd_t  fwd;   /* plain ipfw fwd, or the published socks port */
