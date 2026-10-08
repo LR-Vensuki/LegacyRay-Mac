@@ -956,6 +956,35 @@ int main(void) {
     for (int i = 0; i < 10; ++i) ctl_server_step(&s, 2);
     ok("client reaped", ctl_server_client_count(&s) == 0);
 
+/* the ipad sends more requests at launch than there used to be slots for, and
+   the surplus was accepted only to be closed. with every slot taken a client
+   now waits in the listen queue and is answered once a slot frees up */
+    {
+        int held[CTL_SERVER_MAX_CLIENTS];
+        int all = 1;
+        for (size_t i = 0; i < CTL_SERVER_MAX_CLIENTS; ++i) {
+            held[i] = connect_unix(path);
+            if (held[i] < 0) all = 0;
+            else set_nonblock(held[i]);
+        }
+        for (int i = 0; i < 20; ++i) ctl_server_step(&s, 2);
+        ok("every slot taken",
+           all && ctl_server_client_count(&s) == CTL_SERVER_MAX_CLIENTS);
+        int late = connect_unix(path);
+        ok("a client past the last slot still connects", late >= 0);
+        set_nonblock(late);
+        for (int i = 0; i < 20; ++i) ctl_server_step(&s, 2);
+        errno = 0;
+        ok("a client past the last slot is not closed",
+           read(late, buf, sizeof buf) < 0 && errno == EAGAIN);
+        close(held[0]);
+        ok("it is answered once a slot frees up", auth_client(&s, late, path));
+        for (size_t i = 1; i < CTL_SERVER_MAX_CLIENTS; ++i) close(held[i]);
+        close(late);
+        for (int i = 0; i < 10; ++i) ctl_server_step(&s, 2);
+        ok("waiting clients reaped", ctl_server_client_count(&s) == 0);
+    }
+
     ctl_server_close(&s);
 
     if (g_fail) { fprintf(stderr, "%d check(s) failed\n", g_fail); return 1; }

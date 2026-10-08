@@ -135,12 +135,16 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
 - (void)updateEmpty {
     LRCatalog *catalog = [LRCatalog shared];
     BOOL show = catalog.loaded ? [catalog isEmpty] : (catalog.lastError != nil);
-    if (!show) {
+    BOOL offline = catalog.loaded == NO;
+    /* the ipad builds this pane before the daemon has answered once, so a view
+       made while it was unreachable has to go when an empty catalog arrives,
+       or "the daemon is silent" stays over a daemon that is running */
+    if (_empty && (!show || offline != _emptyOffline)) {
         [_empty removeFromSuperview];
         [_empty release];
         _empty = nil;
-        return;
     }
+    if (!show) return;
     if (_empty) {
         [self layoutEmpty];
         return;
@@ -165,7 +169,7 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
     text.textColor = s->flat ? s->groupMuted : s->groupHeader;
     text.shadowColor = s->flat ? nil : s->groupHeaderShadow;
     text.shadowOffset = CGSizeMake(0, 1);
-    BOOL offline = catalog.loaded == NO;
+    _emptyOffline = offline;
     title.text = offline ? L(@"The daemon is silent") : L(@"No servers yet");
     text.text = offline ? L(@"LegacyRay could not reach its background service. Start it again, or reinstall the package if this keeps happening.")
                         : L(@"Add your first connection: paste a link, scan a QR code or add a subscription from your provider.");

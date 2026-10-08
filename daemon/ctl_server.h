@@ -11,7 +11,13 @@
 extern "C" {
 #endif
 
-#define CTL_SERVER_MAX_CLIENTS 4
+/* the app keeps a WATCH stream open, holds a connection per ping until the
+   answer and, on the ipad, sends half a dozen requests at once at launch. four
+   slots closed the surplus on accept, and the app read the empty reply as a
+   daemon that is not running */
+#define CTL_SERVER_MAX_CLIENTS 16
+/* every ping is a thread doing a whole handshake */
+#define CTL_SERVER_MAX_PINGS 4
 #define CTL_CLIENT_OUT_MAX (1024 * 1024)
 
 typedef int (*ctl_apply_fn)(void *ctx, const ctl_action_t *action);

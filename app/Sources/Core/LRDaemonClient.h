@@ -25,6 +25,7 @@ BOOL LRReplyIsOK(NSString *reply);
     uint64_t _trafficUp;
     uint64_t _trafficDown;
     BOOL _trafficKnown;
+    NSMutableArray *_ensureWaiters; /* callers of the ensureDaemon in flight */
 }
 
 + (LRDaemonClient *)shared;

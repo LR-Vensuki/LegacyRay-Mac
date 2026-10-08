@@ -54,6 +54,9 @@ extern char **environ;
    attempts. a concurrent caller waits long enough to observe that result
    instead of surfacing a false lock failure on ios 13 */
 #define KICK_CONCURRENT_WAIT_TENTHS 600
+/* a daemon dialling over dead servers, checking a new tunnel or redialling
+   after the wifi slept answers nothing for up to half a minute */
+#define BUSY_DAEMON_WAIT_TENTHS 450
 #define COMMAND_TIMEOUT_MS 30000
 #define DPKG_TIMEOUT_MS 180000
 
@@ -96,6 +99,10 @@ static const char *senko_daemon_plist(void) {
 static int acquire_kick_lock(void) {
     int fd = open(KICK_LOCK, O_WRONLY | O_CREAT, 0600);
     if (fd < 0) return -1;
+    /* a daemon started directly from here inherited this descriptor, and
+       with it the lock, for as long as it ran: every later kick sat out the
+       whole lock wait behind a daemon that was never going to let go */
+    (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     for (int waited = 0; waited < KICK_LOCK_WAIT_MS; waited += 100) {
         if (flock(fd, LOCK_EX | LOCK_NB) == 0) return fd;
         if (errno != EWOULDBLOCK && errno != EAGAIN) break;
@@ -465,6 +472,14 @@ static int wait_legacyrayd_down(int tenths) {
         usleep(100000);
     }
     return legacyrayd_alive() ? -1 : 0;
+}
+
+static int wait_legacyrayd_up(int tenths) {
+    for (int i = 0; i < tenths; ++i) {
+        if (legacyrayd_alive()) return 0;
+        usleep(100000);
+    }
+    return -1;
 }
 
 static int launch_job_loaded(const char *launchctl) {
@@ -888,6 +903,17 @@ static int ensure_legacyrayd(void) {
         return 0;
     }
 
+    /* a running daemon that does not answer is busy, not dead. killing it
+       threw a working daemon away together with its launchd job, which a
+       jailbreak whose launchctl cannot reach launchd never got back */
+    if (legacyrayd_alive()) {
+        if (wait_sock(BUSY_DAEMON_WAIT_TENTHS) == 0) {
+            klog("up after waiting for a busy daemon");
+            return 0;
+        }
+        klog("legacyrayd stayed silent, restarting it");
+    }
+
     char lc[64];
     static const char *lcs[] = {
         SENKO_JBROOT "/bin/launchctl", SENKO_USR_BIN "/launchctl",
@@ -925,7 +951,15 @@ static int ensure_legacyrayd(void) {
             char *start[] = { lc, (char *)"start", (char *)LABEL, NULL };
             (void)run_argv(start);
 
-            if (wait_sock(180) == 0) {
+            /* launchctl exits 0 even when it never reached launchd (ios 6
+               jailbreaks that lose /var/tmp/launchd print "launch_msg():
+               Socket is not connected"), and "list <label>" fails there for
+               every job. a daemon process appearing is the one sign that
+               launchd took the job; without it the socket wait was 18 s for
+               nothing */
+            if (wait_legacyrayd_up(30) != 0) {
+                klog("launchd did not start legacyrayd");
+            } else if (wait_sock(180) == 0) {
                 klog("up via launchctl");
                 return 0;
             }
@@ -1025,6 +1059,10 @@ int main(int argc, char **argv) {
     }
     setuid(0);
     setgid(0);
+
+    /* the app's sockets and files come along through posix_spawn and would
+       stay open in a daemon started from here for as long as it runs */
+    for (int fd = 3, max = getdtablesize(); fd < max; ++fd) (void)close(fd);
 
     int kick_lock = acquire_kick_lock();
     if (kick_lock < 0) {

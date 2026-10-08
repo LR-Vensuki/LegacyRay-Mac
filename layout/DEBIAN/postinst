@@ -86,6 +86,12 @@ if [ "${SENKO_UPDATE:-0}" != "1" ]; then
   killall -9 legacyrayd >/dev/null 2>&1 || true
   rm -f /var/tmp/legacyrayd.sock /var/tmp/legacyrayd.token
   "$LAUNCHCTL" load -w "$PLIST" >/dev/null 2>&1 || "$LAUNCHCTL" load "$PLIST" >/dev/null 2>&1 || true
+  # launchctl exits 0 even when it cannot reach launchd (some ios 6 jailbreaks
+  # lose /var/tmp/launchd after boot), and then no daemon ran until the app was
+  # opened. the kick starts one itself when launchd did not
+  if [ -x "$KICK" ]; then
+    ( sleep 5; killall -0 legacyrayd >/dev/null 2>&1 || "$KICK" >/dev/null 2>&1 ) </dev/null >/dev/null 2>&1 &
+  fi
 fi
 
 echo "LegacyRay installed. Control socket: /var/tmp/legacyrayd.sock"

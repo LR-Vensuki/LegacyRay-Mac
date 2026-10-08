@@ -174,6 +174,7 @@ static int LRWriteAll(int fd, const void *buf, size_t len) {
 
 - (void)dealloc {
     [_socketPath release];
+    [_ensureWaiters release];
     [super dealloc];
 }
 
@@ -404,11 +405,26 @@ static NSString *LRKickFailureText(int status, pid_t reaped) {
     });
 }
 
+- (void)finishEnsure:(BOOL)up detail:(NSString *)detail {
+    NSArray *waiters = [_ensureWaiters autorelease];
+    _ensureWaiters = nil;
+    for (id waiter in waiters) {
+        if (waiter == [NSNull null]) continue;
+        ((void (^)(BOOL, NSString *))waiter)(up, detail);
+    }
+}
+
+/* every screen that finds the daemon silent asks at once, and each ask started
+   its own legacyray-kick that only queued behind the first one's lock. one
+   check runs at a time and every caller gets its answer */
 - (void)ensureDaemon:(void (^)(BOOL, NSString *))done {
-    void (^callback)(BOOL, NSString *) = [[done copy] autorelease];
+    BOOL running = _ensureWaiters != nil;
+    if (!running) _ensureWaiters = [[NSMutableArray alloc] init];
+    [_ensureWaiters addObject:done ? [[done copy] autorelease] : (id)[NSNull null]];
+    if (running) return;
     [self probeDaemon:^(BOOL up) {
         if (up) {
-            if (callback) callback(YES, nil);
+            [self finishEnsure:YES detail:nil];
             return;
         }
         [self kickDaemon:^(BOOL kicked, NSString *detail) {
@@ -422,8 +438,8 @@ static NSString *LRKickFailureText(int status, pid_t reaped) {
                     else usleep(250000);
                 }
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (up2) callback(YES, why);
-                    else callback(NO, why ? why : @"daemon still offline");
+                    [self finishEnsure:up2
+                                detail:(up2 || why) ? why : @"daemon still offline"];
                 });
                 [pool drain];
             });

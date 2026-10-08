@@ -229,7 +229,7 @@ ctls_status_t ctl_server_init(ctl_server_t *s, const char *path,
         s->ping_pipe[0] = s->ping_pipe[1] = -1;
         return CTLS_ERR_BIND;
     }
-    if (listen(fd, 4) != 0) {
+    if (listen(fd, CTL_SERVER_MAX_CLIENTS) != 0) {
         close(fd);
         unlink(path);
         close(s->ping_pipe[0]);
@@ -630,7 +630,7 @@ static void drain_ping_results(ctl_server_t *s) {
 
 static int start_ping_job(ctl_server_t *s, ctl_client_t *c,
                           int server_index, const vl_server_t *profile) {
-    if (!s || !c || !profile || s->ping_active >= CTL_SERVER_MAX_CLIENTS)
+    if (!s || !c || !profile || s->ping_active >= CTL_SERVER_MAX_PINGS)
         return -1;
     int slot = (int)(c - s->clients);
     if (slot < 0 || slot >= CTL_SERVER_MAX_CLIENTS) return -1;
@@ -2277,7 +2277,9 @@ size_t ctl_server_prepare(ctl_server_t *s, struct pollfd *pfd, size_t cap) {
     broadcast_stats(s);
 
     size_t nf = 0;
-    pfd[nf].fd = s->listen_fd;
+/* with every slot taken a new connection waits in the listen queue until one
+   frees up; accepting it only to close it again failed the request instead */
+    pfd[nf].fd = alloc_client(s) ? s->listen_fd : -1;
     pfd[nf].events = POLLIN;
     pfd[nf].revents = 0;
     nf++;
