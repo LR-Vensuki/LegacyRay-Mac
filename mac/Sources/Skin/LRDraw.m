@@ -527,6 +527,10 @@ NSImage *LRGlyphList(CGFloat side, NSColor *ink) {
     return LRSystemGlyph(NSImageNameListViewTemplate, side, ink);
 }
 
+NSImage *LRGlyphNamed(NSString *name, CGFloat side, NSColor *ink) {
+    return LRSystemGlyph(name, side, ink);
+}
+
 /* the icon in miniature: the stitched square and the L. off it is an
    outline, on it is a solid tile with the L cut out of it */
 NSImage *LRStatusItemImage(int state) {

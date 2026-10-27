@@ -74,6 +74,30 @@ static NSImage *LRIconSubscriptions(void) {
                         LR_CORETYPES @"Clock.icns", nil], NSImageNameAdvanced);
 }
 
+/* the flat theme before yosemite, where the system has only glossy art:
+   the settings tile of ios 7, a system template glyph in white on a
+   coloured rounded square */
+static NSImage *LRFlatPaneIcon(NSString *glyph, CGFloat r, CGFloat g, CGFloat b) {
+    NSImage *mark = LRGlyphNamed(glyph, 16, [NSColor whiteColor]);
+    return LRImageWithSize(NSMakeSize(32, 32), YES, ^(CGContextRef ctx, CGRect rect) {
+        CGContextSetRGBFillColor(ctx, r, g, b, 1);
+        LRAddRoundRect(ctx, CGRectMake(3, 3, 26, 26), 6);
+        CGContextFillPath(ctx);
+        [mark drawInRect:NSMakeRect(8, 8, 16, 16) fromRect:NSZeroRect operation:NSCompositeSourceOver
+                fraction:1 respectFlipped:YES hints:nil];
+    });
+}
+
+static NSImage *LRFlatIconForPane(NSString *p) {
+    if ([p isEqualToString:@"general"]) return LRFlatPaneIcon(NSImageNameHomeTemplate, 0.56f, 0.56f, 0.58f);
+    if ([p isEqualToString:@"connection"]) return LRFlatPaneIcon(NSImageNameRefreshTemplate, 0.30f, 0.85f, 0.39f);
+    if ([p isEqualToString:@"routing"]) return LRFlatPaneIcon(NSImageNameFollowLinkFreestandingTemplate, 0, 0.48f, 1);
+    if ([p isEqualToString:@"sites"]) return LRFlatPaneIcon(NSImageNameBookmarksTemplate, 1, 0.58f, 0);
+    if ([p isEqualToString:@"subs"]) return LRFlatPaneIcon(NSImageNameListViewTemplate, 0.35f, 0.34f, 0.84f);
+    if ([p isEqualToString:@"network"]) return LRFlatPaneIcon(NSImageNameLockLockedTemplate, 0.20f, 0.67f, 0.86f);
+    return LRFlatPaneIcon(NSImageNameActionTemplate, 0.56f, 0.56f, 0.58f);
+}
+
 #pragma mark login item
 
 static LSSharedFileListItemRef LRLoginItemCopy(LSSharedFileListRef list) CF_RETURNS_RETAINED;
@@ -140,6 +164,7 @@ static void LRSetOpensAtLogin(BOOL on) {
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self selector:@selector(settingsChanged) name:LRDaemonSettingsDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(settingsChanged) name:LRRoutingProfilesDidChangeNotification object:nil];
+        [nc addObserver:self selector:@selector(skinChanged) name:LRSkinDidChangeNotification object:nil];
         NSString *last = [[NSUserDefaults standardUserDefaults] stringForKey:@"LRPrefsPane"];
         [self selectPane:[[self toolbarAllowedItemIdentifiers:tb] containsObject:last] ? last : @"general"];
         [w center];
@@ -200,6 +225,7 @@ static void LRSetOpensAtLogin(BOOL on) {
 }
 
 - (NSImage *)iconForPane:(NSString *)p {
+    if (SKIN->flat && !LRMacIsYosemite()) return LRFlatIconForPane(p);
     if ([p isEqualToString:@"general"]) return [NSImage imageNamed:NSImageNamePreferencesGeneral];
     if ([p isEqualToString:@"connection"]) return LRIconConnection();
     if ([p isEqualToString:@"routing"]) return LRIconRouting();
@@ -217,6 +243,12 @@ static void LRSetOpensAtLogin(BOOL on) {
     [item setTarget:self];
     [item setAction:@selector(toolbarPicked:)];
     return item;
+}
+
+/* the theme picks between the system's art and the flat tiles */
+- (void)skinChanged {
+    for (NSToolbarItem *item in [[[self window] toolbar] items])
+        [item setImage:[self iconForPane:[item itemIdentifier]]];
 }
 
 - (void)toolbarPicked:(NSToolbarItem *)item {

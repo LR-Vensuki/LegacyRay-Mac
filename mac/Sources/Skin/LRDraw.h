@@ -66,5 +66,7 @@ void LRFlushSkinCaches(void);
 NSImage *LRGlyphPlus(CGFloat side, NSColor *ink);
 NSImage *LRGlyphGear(CGFloat side, NSColor *ink);
 NSImage *LRGlyphList(CGFloat side, NSColor *ink);
+/* any named template image, fitted to side and inked */
+NSImage *LRGlyphNamed(NSString *name, CGFloat side, NSColor *ink);
 /* the menu bar icon: a ray in a ring; template, so the menu bar inks it */
 NSImage *LRStatusItemImage(int state);   /* 0 off, 1 connecting, 2 on, 3 fault */
