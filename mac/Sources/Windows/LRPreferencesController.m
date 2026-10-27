@@ -29,105 +29,49 @@ static void LRRoutingChanged(void) {
 
 #pragma mark icons
 
-/* the pane icons that have no system picture: a glossy coloured ball with a
-   white glyph, as 10.8 drew them; a flat disc on yosemite */
-static NSImage *LRPaneIcon(NSColor *color, void (^glyph)(CGContextRef ctx, CGFloat side)) {
-    NSColor *c = [[color copy] autorelease];
-    void (^g)(CGContextRef, CGFloat) = [[glyph copy] autorelease];
-    BOOL flat = SKIN->flat;
-    return LRImageWithSize(NSMakeSize(32, 32), YES, ^(CGContextRef ctx, CGRect r) {
-        CGRect disc = CGRectMake(3, 2.5f, 26, 26);
-        if (!flat) {
-            CGContextSaveGState(ctx);
-            CGContextSetShadowWithColor(ctx, CGSizeMake(0, 1.2f), 1.5f,
-                                        [[NSColor colorWithCalibratedWhite:0 alpha:0.45f] CGColor]);
-            [LRColorMix(c, [NSColor blackColor], 0.25f) setFill];
-            CGContextFillEllipseInRect(ctx, disc);
-            CGContextRestoreGState(ctx);
-            CGContextSaveGState(ctx);
-            CGContextAddEllipseInRect(ctx, CGRectInset(disc, 0.5f, 0.5f));
-            CGContextClip(ctx);
-            LRFillVertical(ctx, disc, LRColorMix(c, [NSColor whiteColor], 0.25f), LRColorMix(c, [NSColor blackColor], 0.2f));
-            LRFillRadial(ctx, CGPointMake(16, 27), 0, 13, LRColorAlpha(LRColorMix(c, [NSColor whiteColor], 0.5f), 0.7f),
-                         [NSColor colorWithCalibratedWhite:1 alpha:0]);
-            /* the gloss cap */
-            LRFillVertical(ctx, CGRectMake(6, 3.5f, 20, 11), [NSColor colorWithCalibratedWhite:1 alpha:0.6f],
-                           [NSColor colorWithCalibratedWhite:1 alpha:0.05f]);
-            CGContextRestoreGState(ctx);
-        } else {
-            [c setFill];
-            CGContextFillEllipseInRect(ctx, disc);
-        }
-        CGContextSaveGState(ctx);
-        if (!flat) CGContextSetShadowWithColor(ctx, CGSizeMake(0, -0.8f), 0.8f,
-                                               [[NSColor colorWithCalibratedWhite:0 alpha:0.5f] CGColor]);
-        CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 1);
-        CGContextSetRGBFillColor(ctx, 1, 1, 1, 1);
-        CGContextSetLineCap(ctx, kCGLineCapRound);
-        CGContextSetLineJoin(ctx, kCGLineJoinRound);
-        g(ctx, 32);
-        CGContextRestoreGState(ctx);
-    });
+/* the panes with no named system image take the art of a system pane or app
+   that means the same thing, so they look like the rest of os x on every
+   version, glossy on 10.8 and flat on yosemite. the first path that exists
+   wins; a mac without any of them gets the named image */
+#define LR_CORETYPES @"/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/"
+#define LR_PREFPANES @"/System/Library/PreferencePanes/"
+
+static NSImage *LRSystemArt(NSArray *paths, NSString *fallback) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *p in paths) {
+        if (![p length] || ![fm fileExistsAtPath:p]) continue;
+        NSImage *img = [[p pathExtension] isEqualToString:@"icns"]
+            ? [[[NSImage alloc] initWithContentsOfFile:p] autorelease]
+            : [[[[NSWorkspace sharedWorkspace] iconForFile:p] copy] autorelease];
+        if (!img) continue;
+        [img setSize:NSMakeSize(32, 32)];
+        return img;
+    }
+    return [NSImage imageNamed:fallback];
 }
 
+/* reconnecting and failing over: the sync arrows */
 static NSImage *LRIconConnection(void) {
-    return LRPaneIcon([NSColor colorWithCalibratedRed:0.22f green:0.62f blue:0.27f alpha:1], ^(CGContextRef ctx, CGFloat s) {
-        CGContextSetLineWidth(ctx, 2.4f);
-        CGContextAddArc(ctx, 16, 16, 7, (CGFloat)-M_PI_2 + 0.75f, (CGFloat)-M_PI_2 - 0.75f + (CGFloat)M_PI * 2, 0);
-        CGContextStrokePath(ctx);
-        CGContextMoveToPoint(ctx, 16, 7.5f);
-        CGContextAddLineToPoint(ctx, 16, 14);
-        CGContextStrokePath(ctx);
-    });
+    return LRSystemArt([NSArray arrayWithObjects:LR_CORETYPES @"Sync.icns", nil], NSImageNameNetwork);
 }
 
+/* where traffic goes: bonjour's linked nodes, or the firewall's pane */
 static NSImage *LRIconRouting(void) {
-    return LRPaneIcon([NSColor colorWithCalibratedRed:0.16f green:0.42f blue:0.85f alpha:1], ^(CGContextRef ctx, CGFloat s) {
-        /* one road splitting in two */
-        CGContextSetLineWidth(ctx, 2.2f);
-        CGContextMoveToPoint(ctx, 16, 25);
-        CGContextAddLineToPoint(ctx, 16, 17);
-        CGContextAddLineToPoint(ctx, 10, 10);
-        CGContextMoveToPoint(ctx, 16, 17);
-        CGContextAddLineToPoint(ctx, 22, 10);
-        CGContextStrokePath(ctx);
-        for (int i = 0; i < 2; ++i) {
-            CGFloat x = i ? 22 : 10, dir = i ? 1 : -1;
-            CGContextMoveToPoint(ctx, x + dir * 1.5f, 7);
-            CGContextAddLineToPoint(ctx, x - dir * 3.8f, 8.8f);
-            CGContextAddLineToPoint(ctx, x + dir * 0.4f, 12.6f);
-            CGContextClosePath(ctx);
-            CGContextFillPath(ctx);
-        }
-    });
+    return LRSystemArt([NSArray arrayWithObjects:LR_CORETYPES @"Bonjour.icns",
+                        LR_PREFPANES @"Security.prefPane", nil], NSImageNameNetwork);
 }
 
+/* the list of sites: safari's compass */
 static NSImage *LRIconSites(void) {
-    return LRPaneIcon([NSColor colorWithCalibratedRed:0.92f green:0.52f blue:0.12f alpha:1], ^(CGContextRef ctx, CGFloat s) {
-        CGContextSetLineWidth(ctx, 1.8f);
-        for (int i = 0; i < 3; ++i) {
-            CGFloat y = 10.5f + i * 5.5f;
-            CGContextFillEllipseInRect(ctx, CGRectMake(8.5f, y - 1.6f, 3.2f, 3.2f));
-            CGContextMoveToPoint(ctx, 14, y);
-            CGContextAddLineToPoint(ctx, 23.5f, y);
-        }
-        CGContextStrokePath(ctx);
-    });
+    NSString *safari = [[NSWorkspace sharedWorkspace] absolutePathForAppBundleWithIdentifier:@"com.apple.Safari"];
+    return LRSystemArt([NSArray arrayWithObjects:safari ? safari : @"",
+                        LR_CORETYPES @"ToolbarSitesFolderIcon.icns", nil], NSImageNameNetwork);
 }
 
+/* updates on a schedule and reminders before the end: date & time */
 static NSImage *LRIconSubscriptions(void) {
-    return LRPaneIcon([NSColor colorWithCalibratedRed:0.55f green:0.30f blue:0.80f alpha:1], ^(CGContextRef ctx, CGFloat s) {
-        CGContextSetLineWidth(ctx, 2.2f);
-        CGContextAddArc(ctx, 16, 16, 6.5f, (CGFloat)M_PI * 0.15f, (CGFloat)M_PI * 1.15f, 0);
-        CGContextStrokePath(ctx);
-        CGContextAddArc(ctx, 16, 16, 6.5f, (CGFloat)M_PI * 1.15f + 0.6f, (CGFloat)M_PI * 2.15f + 0.6f - 0.6f, 0);
-        CGContextStrokePath(ctx);
-        CGContextMoveToPoint(ctx, 21.5f, 22);
-        CGContextAddLineToPoint(ctx, 25, 18.5f);
-        CGContextAddLineToPoint(ctx, 20.5f, 17.5f);
-        CGContextClosePath(ctx);
-        CGContextFillPath(ctx);
-    });
+    return LRSystemArt([NSArray arrayWithObjects:LR_PREFPANES @"DateAndTime.prefPane",
+                        LR_CORETYPES @"Clock.icns", nil], NSImageNameAdvanced);
 }
 
 #pragma mark login item
