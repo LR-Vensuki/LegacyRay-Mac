@@ -1,6 +1,6 @@
 # LegacyRay для Mac
 
-VLESS, Reality, Trojan, Shadowsocks, SOCKS, AmneziaWG и WireGuard для всего
+VLESS, VMess, Reality, Trojan, Shadowsocks, SOCKS, AmneziaWG и WireGuard для всего
 Mac — на **OS X 10.8 Mountain Lion и 10.9 Mavericks** в скевоморфном
 оформлении тех лет, **с 10.10 Yosemite** — в плоском. Работает и на более
 новых macOS (x86_64; на Mac с Apple Silicon — через Rosetta 2).
